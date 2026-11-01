@@ -200,14 +200,20 @@
   function viewMenu() {
     const names = [...new Set(state.cats.map(c => c.name))];
     const ex = names.map(n => `<label class="chk" style="margin:6px 0"><input type="checkbox" data-act="toggleEx" data-v="${esc(n)}" ${state.excluded.includes(n) ? 'checked' : ''}>${esc(n)}</label>`).join('');
-    const rules = state.rules.length ? state.rules.map((r, i) => `<div class="tx" style="min-height:48px"><div class="l"><div>${esc(r.keyword)}</div><small>→ ${esc(r.category)}</small></div><button data-act="rmRule" data-v="${i}" class="danger">削除</button></div>`).join('') : '<div class="muted">まだありません。取引を編集するとき「同じ取引先をすべて」を選ぶと追加されます。</div>';
+    const rules = state.rules.length ? state.rules.map((r, i) => `<div class="tx" style="min-height:48px"><div class="l"><div>${esc(r.keyword)}</div><small>→ ${esc(r.category)}</small></div><button data-act="rmRule" data-v="${i}" class="danger">削除</button></div>`).join('') : '<div class="muted" style="padding:10px 16px">まだありません。</div>';
+    const ruleCats = state.cats.filter(c => c.type === 'expense').map(c => `<option>${esc(c.name)}</option>`).join('');
     return `<div class="top"><b style="margin:0 auto">メニュー</b></div>
       <h2>カテゴリ</h2><div class="card"><div class="row"><button data-act="editCats" data-v="expense">支出カテゴリの編集</button><button data-act="editCats" data-v="income">収入カテゴリの編集</button></div>
         <p class="muted" style="margin-bottom:6px">取り込み済みのPayPay・セゾンの取引に、最新の自動分類ルールを当て直します。手入力の取引と、手で直した取引は変わりません。</p>
         <button data-act="recat" style="width:100%">自動分類をやり直す</button></div>
       <h2>CSVを取り込む(PayPay・セゾンカード)</h2><div class="card"><p class="muted" style="margin-top:0">PayPayの取引履歴CSV、またはセゾンカードの利用明細CSVを選びます。形式は自動で判定します。同じ取引は2回入りません。PayPayのチャージ・ポイントは取り込みません。海外利用でカテゴリが決まらないものは「旅行」になります。</p><input type="file" id="csvFile" accept=".csv,text/csv"><div id="importResult"></div></div>
       <h2>集計から除外するカテゴリ</h2><div class="card">${ex}</div>
-      <h2>自分のカテゴリ規則</h2><div class="list">${rules}</div>
+      <h2>自分のカテゴリ規則</h2>
+      <div class="card"><p class="muted" style="margin-top:0">店名の一部を入れると、その店名を含む取引が、選んだカテゴリになります。標準のルールより優先されます。規則はこの端末の中だけに保存されます。</p>
+        <input id="ruleKw" placeholder="店名の一部(例: ○○サロン)" autocomplete="off" style="background:var(--bg)">
+        <select id="ruleCat" style="margin-top:8px;background:var(--bg)">${ruleCats}</select>
+        <button data-act="addRule" class="primary" style="width:100%;margin-top:8px">規則を追加</button></div>
+      <div class="list">${rules}</div>
       <h2>バックアップ</h2><div class="card"><p class="muted" style="margin-top:0">Safariはしばらく使わないとデータを消すことがあります。月に1回はJSONを書き出して保存してください。</p>
         <div class="row"><button data-act="exportJson">JSON書き出し</button><button data-act="exportCsv">CSV書き出し</button></div>
         <p class="muted">JSONから復元(現在のデータを置き換えます)</p><input type="file" id="jsonFile" accept=".json,application/json"></div>
@@ -433,6 +439,18 @@
       case 'toggleEx':
         state.excluded = el.checked ? state.excluded.concat(v) : state.excluded.filter(c => c !== v); save(); break;
       case 'rmRule': state.rules.splice(+v, 1); save(); render(); break;
+      case 'addRule': {
+        const kw = ($('ruleKw').value || '').trim(), cat = $('ruleCat').value;
+        if (!kw) { toast('店名の一部を入力してください'); break; }
+        state.rules = state.rules.filter(r => r.keyword !== kw).concat({ keyword: kw, category: cat });
+        save();
+        const n = Core.recategorize(state.txs, state.rules, { dry: true });
+        if (n && confirm(`規則「${kw}」→「${cat}」を追加しました。\n取り込み済みの ${n}件のカテゴリが変わります。今すぐ反映しますか。\n(手入力と、手で直した取引は変わりません)`)) {
+          Core.recategorize(state.txs, state.rules); normalize(state); save(); toast(`${n}件のカテゴリを更新しました`);
+        } else toast('規則を追加しました');
+        render(true);
+        break;
+      }
       case 'editCats': ui.catType = v; catEditor(); break;
       case 'recat': {
         const n = Core.recategorize(state.txs, state.rules, { dry: true });
