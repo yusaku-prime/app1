@@ -1,5 +1,5 @@
 // キャッシュ優先のService Worker。ファイルを更新したら VERSION を上げる。
-const VERSION = 'kakeibo-v8';
+const VERSION = 'kakeibo-v9';
 const FILES = ['./', 'index.html', 'core.js', 'app.js', 'manifest.webmanifest', 'icon-180.png', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {

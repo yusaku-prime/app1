@@ -186,7 +186,7 @@
     const rules = state.rules.length ? state.rules.map((r, i) => `<div class="tx" style="min-height:48px"><div class="l"><div>${esc(r.keyword)}</div><small>→ ${esc(r.category)}</small></div><button data-act="rmRule" data-v="${i}" class="danger">削除</button></div>`).join('') : '<div class="muted">まだありません。取引を編集するとき「同じ取引先をすべて」を選ぶと追加されます。</div>';
     return `<div class="top"><b style="margin:0 auto">メニュー</b></div>
       <h2>カテゴリ</h2><div class="card"><div class="row"><button data-act="editCats" data-v="expense">支出カテゴリの編集</button><button data-act="editCats" data-v="income">収入カテゴリの編集</button></div></div>
-      <h2>PayPayのCSVを取り込む</h2><div class="card"><p class="muted" style="margin-top:0">PayPayの取引履歴CSVを選びます。同じ取引は2回入りません。チャージ・ポイントは取り込みません。</p><input type="file" id="csvFile" accept=".csv,text/csv"><div id="importResult"></div></div>
+      <h2>CSVを取り込む(PayPay・セゾンカード)</h2><div class="card"><p class="muted" style="margin-top:0">PayPayの取引履歴CSV、またはセゾンカードの利用明細CSVを選びます。形式は自動で判定します。同じ取引は2回入りません。PayPayのチャージ・ポイントは取り込みません。海外利用でカテゴリが決まらないものは「旅行」になります。</p><input type="file" id="csvFile" accept=".csv,text/csv"><div id="importResult"></div></div>
       <h2>集計から除外するカテゴリ</h2><div class="card">${ex}</div>
       <h2>自分のカテゴリ規則</h2><div class="list">${rules}</div>
       <h2>バックアップ</h2><div class="card"><p class="muted" style="margin-top:0">Safariはしばらく使わないとデータを消すことがあります。月に1回はJSONを書き出して保存してください。</p>
@@ -284,11 +284,13 @@
   async function importCsv(file) {
     const box = $('importResult');
     try {
-      const { records, skipped } = Core.parsePayPay(await readText(file), state.rules);
+      const { records, skipped, meta } = Core.parseStatement(await readText(file), state.rules);
       const r = Core.mergeImport(state.txs, records);
       state.txs = r.merged; normalize(state); save();
       const sk = Object.entries(skipped).map(([k, v]) => `${esc(k)} ${v}件`).join('、') || 'なし';
-      box.innerHTML = `<p><b>取り込み結果</b><br>追加 ${r.added}件 / 重複 ${r.dup}件</p><p class="muted">取り込まなかったもの: ${sk}</p><button class="primary" data-act="tab" data-v="cal">カレンダーを見る</button>`;
+      const saison = meta.format === 'saison';
+      const info = saison ? `<p class="muted">お支払日 ${esc(meta.payDate || '-')} / 請求額 ${meta.bill ? yen(meta.bill) : '-'} / 取り込んだ明細の合計 ${yen(meta.total)}<br>※請求額との差は、手数料や金利などの可能性があります。</p>` : '';
+      box.innerHTML = `<p><b>取り込み結果(${saison ? 'セゾンカード' : 'PayPay'})</b><br>追加 ${r.added}件 / 重複 ${r.dup}件</p>${info}<p class="muted">取り込まなかったもの: ${sk}</p><button class="primary" data-act="tab" data-v="cal">カレンダーを見る</button>`;
       if (records.length) ui.month = records.reduce((m, t) => t.date > m ? t.date : m, '0000').slice(0, 7);
     } catch (e) {
       box.innerHTML = `<p class="danger">取り込めませんでした: ${esc(e.message)}</p>`;
