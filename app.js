@@ -34,7 +34,7 @@
   }
   let state = load();
   let ui = {
-    tab: 'input', month: today().slice(0, 7), rep: 'month', repType: 'expense', repCat: null,
+    tab: 'input', month: today().slice(0, 7), rep: 'month', repType: 'expense', repSel: null,
     calDay: null, entryType: 'expense', entryDate: today(), catType: 'expense', newIcon: ICONS[0],
   };
 
@@ -100,10 +100,10 @@
   }
 
   // ---------- 画面 ----------
-  function render() {
+  function render(keepScroll) {
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === ui.tab));
     $('main').innerHTML = { input: viewInput, cal: viewCal, report: viewReport, menu: viewMenu }[ui.tab]();
-    window.scrollTo(0, 0);
+    if (!keepScroll) window.scrollTo(0, 0);
   }
 
   function viewInput() {
@@ -137,14 +137,22 @@
 
   function donut(list, total) {
     if (!total) return '<div class="empty">データがありません</div>';
-    let acc = 0;
-    const segs = list.map(c => {
+    // 上位4つ(5%以上)は常にラベル表示。それ以外は、タップして選ぶと表示。
+    const R = 15.9155;
+    let acc = 0, segs = '', labels = '';
+    list.forEach((c, i) => {
       const pct = c.amount / total * 100;
+      const sel = ui.repSel === c.category;
       const col = catOf(c.category, ui.repType).color;
-      const s = `<circle cx="21" cy="21" r="15.9155" fill="none" stroke="${col}" stroke-width="7" stroke-dasharray="${pct} ${100 - pct}" stroke-dashoffset="${25 - acc}"/>`;
-      acc += pct; return s;
-    }).join('');
-    return `<svg class="donut" viewBox="0 0 42 42" role="img" aria-label="カテゴリ別の割合"><circle cx="21" cy="21" r="15.9155" fill="none" stroke="var(--line)" stroke-width="7"/>${segs}<text x="21" y="22.5" text-anchor="middle" font-size="3.6" font-weight="700">${num(total)}円</text></svg>`;
+      segs += `<circle data-act="segTap" data-v="${esc(c.category)}" cx="21" cy="21" r="${R}" fill="none" stroke="${col}" stroke-width="${sel ? 9 : 8}" stroke-dasharray="${pct} ${100 - pct}" stroke-dashoffset="${25 - acc}" style="cursor:pointer"><title>${esc(c.category)} ${num(c.amount)}円</title></circle>`;
+      if ((i < 4 && pct >= 5) || sel) {
+        const a = (-90 + (acc + pct / 2) * 3.6) * Math.PI / 180;
+        const x = (21 + R * Math.cos(a)).toFixed(2), y = (21 + R * Math.sin(a)).toFixed(2);
+        labels += `<text class="lb" x="${x}" y="${y}" text-anchor="middle"><tspan x="${x}" dy="-0.2" font-size="2.1" font-weight="700">${esc(c.category)}</tspan><tspan x="${x}" dy="2.3" font-size="1.9">${num(c.amount)}円</tspan></text>`;
+      }
+      acc += pct;
+    });
+    return `<svg class="donut" viewBox="0 0 42 42" role="img" aria-label="カテゴリ別の割合"><circle cx="21" cy="21" r="${R}" fill="none" stroke="var(--line)" stroke-width="8"/>${segs}${labels}<text x="21" y="22.2" text-anchor="middle" font-size="3" font-weight="700" style="pointer-events:none">${num(total)}円</text></svg>`;
   }
 
   function viewReport() {
@@ -155,14 +163,8 @@
     const list = isExp ? s.byCat : s.byCatIn, total = isExp ? s.expense : s.income;
     const rows = list.map(c => {
       const ct = catOf(c.category, ui.repType);
-      return `<button class="rrow ${ui.repCat === c.category ? 'on' : ''}" data-act="repCat" data-v="${esc(c.category)}">${icon(ct)}<span class="nm">${esc(c.category)}</span><span class="am">${yen(c.amount)}</span><span class="pc">${(c.amount / total * 100).toFixed(1)} %</span></button>`;
+      return `<button class="rrow ${ui.repSel === c.category ? 'on' : ''}" data-act="repCat" data-v="${esc(c.category)}">${icon(ct)}<span class="nm">${esc(c.category)}</span><span class="am">${yen(c.amount)}</span><span class="pc">${(c.amount / total * 100).toFixed(1)} %</span></button>`;
     }).join('');
-    let detail = '';
-    if (ui.repCat) {
-      const ex = excluded();
-      const items = sortDesc(state.txs.filter(t => t.date.startsWith(period) && t.type === ui.repType && t.category === ui.repCat && !ex.has(t.category)));
-      detail = `<h2>${esc(ui.repCat)}の取引</h2><div class="list">${groupedList(items)}</div>`;
-    }
     let monthly = '';
     if (year) {
       monthly = '<h2>月ごとの収支</h2><div class="list">' + Array.from({ length: 12 }, (_, i) => {
@@ -175,7 +177,7 @@
       <div class="boxes"><div class="box"><small>支出</small><b class="exp">-${yen(s.expense)}</b></div><div class="box"><small>収入</small><b class="inc">+${yen(s.income)}</b></div><div class="box w"><small>収支</small><b>${s.balance < 0 ? '-' : ''}${yen(Math.abs(s.balance))}</b></div></div>
       <div class="top" style="justify-content:center"><div class="seg"><button data-act="repType" data-v="expense" class="${isExp ? 'on' : ''}">支出</button><button data-act="repType" data-v="income" class="${isExp ? '' : 'on'}">収入</button></div></div>
       <div class="card" style="border:0">${donut(list, total)}</div>
-      <div class="list">${rows}</div>${detail}${monthly}`;
+      <div class="list">${rows}</div>${monthly}`;
   }
 
   function viewMenu() {
@@ -195,18 +197,45 @@
 
   // ---------- シート ----------
   function openSheet(html) { const s = $('sheet'); s.innerHTML = `<div class="in">${html}</div>`; s.hidden = false; }
-  function closeSheet() { $('sheet').hidden = true; $('sheet').innerHTML = ''; }
+  // 編集画面の「←」の戻り先: {kind:'rep', name} カテゴリの取引一覧 / {kind:'search', q} 検索 / null 閉じる
+  let ctx = null;
+  function closeSheet() { $('sheet').hidden = true; $('sheet').innerHTML = ''; ctx = null; }
+  function reopen() {
+    const c = ctx;
+    if (c && c.kind === 'rep') openRepDetail(c.name);
+    else if (c && c.kind === 'search') openSearch(c.q);
+    else closeSheet();
+  }
+  // act: 'back'=呼び出し元の画面へ戻る(編集画面) / 'closeSheet'=閉じる(一覧画面)
+  const sheetHead = (title, right, act) => `<div class="sh"><button class="ibtn" data-act="${act || 'back'}" aria-label="戻る">←</button><b>${title}</b>${right || ''}</div>`;
 
   function openEdit(id) {
     const t = state.txs.find(x => x.id === id);
-    if (t) openSheet(`<h3>取引を編集</h3>${entryForm(t, true)}`);
+    if (t) openSheet(`${sheetHead('取引を編集')}${entryForm(t, true)}`);
   }
 
-  function openSearch() {
+  // 日付つきの取引行(カテゴリ別の取引一覧用)
+  function txRowDated(t) {
+    const c = catOf(t.category, t.type), [y, m, d] = t.date.split('-').map(Number);
+    const sub = `${m}/${d}(${WD[new Date(y, m - 1, d).getDay()]}) ${[t.payee, t.memo].filter(Boolean).join(' / ')}`;
+    return `<button class="tx" data-act="edit" data-v="${esc(t.id)}">${icon(c)}<div class="l"><div><b>${esc(t.category)}</b></div><small>${esc(sub)}</small></div><div class="r ${t.type === 'income' ? 'inc' : 'exp'}">${t.type === 'income' ? '+' : '-'}${yen(t.amount)}</div></button>`;
+  }
+  function openRepDetail(name) {
+    const period = ui.rep === 'year' ? ui.month.slice(0, 4) : ui.month;
+    const label = ui.rep === 'year' ? period + '年' : monthLabel();
+    const items = sortDesc(state.txs.filter(t => t.date.startsWith(period) && t.type === ui.repType && t.category === name));
+    const sum = items.reduce((a, t) => a + t.amount, 0);
+    openSheet(`${sheetHead(esc(name) + ' <small class="muted">' + label + '</small>', `<span class="${ui.repType === 'income' ? 'inc' : 'exp'}" style="font-weight:700">${yen(sum)}</span>`, 'closeSheet')}<div class="list">${items.length ? items.map(txRowDated).join('') : '<div class="empty">取引がありません</div>'}</div>`);
+    ctx = { kind: 'rep', name };
+  }
+
+  function openSearch(q) {
     openSheet(`<h3>検索</h3><div style="padding:8px 16px;background:var(--card)"><input id="searchQ" placeholder="取引先・メモ・カテゴリ" style="background:var(--bg)"></div><div class="muted" id="searchCount" style="padding:6px 16px"></div><div class="list" id="searchRes"></div><div style="padding:12px 16px"><button data-act="closeSheet" style="width:100%">閉じる</button></div>`);
-    $('searchQ').focus();
+    ctx = { kind: 'search', q: q || '' };
+    if (q) { $('searchQ').value = q; runSearch(q); } else $('searchQ').focus();
   }
   function runSearch(q) {
+    if (ctx && ctx.kind === 'search') ctx.q = q;
     const r = Core.searchTxs(state.txs, q);
     $('searchCount').textContent = q.trim() ? `${r.length}件` : '';
     $('searchRes').innerHTML = r.slice(0, 100).map(t => `<div class="dh"><span>${dayLabel(t.date)}</span></div>${txRow(t)}`).join('') + (r.length > 100 ? '<div class="empty">先頭100件を表示しています</div>' : '');
@@ -240,7 +269,7 @@
       state.txs.forEach(x => { if (x.payee === payee && x.type === t.type) x.category = t.category; });
     }
     save();
-    if (edit) { closeSheet(); render(); toast('保存しました'); return; }
+    if (edit) { render(true); reopen(); toast('保存しました'); return; }
     ui.entryType = t.type; ui.entryDate = date; ui.month = date.slice(0, 7);
     render(); toast(`${dayLabel(date)} ${yen(amount)} を追加しました`);
   }
@@ -300,13 +329,15 @@
       case 'tab': ui.tab = v; render(); break;
       case 'mPrev': case 'pPrev': slide(-1); break;
       case 'mNext': case 'pNext': slide(1); break;
-      case 'goMonth': ui.month = v; ui.rep = 'month'; ui.repCat = null; render(); break;
+      case 'goMonth': ui.month = v; ui.rep = 'month'; ui.repSel = null; render(); break;
       case 'calDay': ui.calDay = ui.calDay === v ? null : v; render(); break;
-      case 'repMode': ui.rep = v; ui.repCat = null; render(); break;
-      case 'repType': ui.repType = v; ui.repCat = null; render(); break;
-      case 'repCat': ui.repCat = ui.repCat === v ? null : v; render(); break;
+      case 'repMode': ui.rep = v; ui.repSel = null; render(); break;
+      case 'repType': ui.repType = v; ui.repSel = null; render(); break;
+      case 'segTap': ui.repSel = ui.repSel === v ? null : v; render(true); break; // グラフをタップ: ラベルの表示/非表示
+      case 'repCat': ui.repSel = v; render(true); openRepDetail(v); break; // 一覧をタップ: 取引一覧を開く
       case 'search': openSearch(); break;
-      case 'edit': closeSheet(); openEdit(v); break;
+      case 'edit': openEdit(v); break;
+      case 'back': reopen(); break;
       case 'closeSheet': closeSheet(); break;
       case 'setType': {
         form.elements.type.value = v;
@@ -328,7 +359,7 @@
       }
       case 'delTx':
         if (confirm('この取引を削除します。よろしいですか。')) {
-          state.txs = state.txs.filter(x => x.id !== v); save(); closeSheet(); render(); toast('削除しました');
+          state.txs = state.txs.filter(x => x.id !== v); save(); render(true); reopen(); toast('削除しました');
         }
         break;
       case 'toggleEx':
@@ -385,7 +416,7 @@
 
   function applyMonth(dir) {
     if (ui.tab === 'cal') { ui.month = Core.addMonths(ui.month, dir); ui.calDay = null; }
-    else { ui.month = Core.addMonths(ui.month, dir * (ui.rep === 'year' ? 12 : 1)); ui.repCat = null; }
+    else { ui.month = Core.addMonths(ui.month, dir * (ui.rep === 'year' ? 12 : 1)); ui.repSel = null; }
   }
   function resetStyle() { mainEl.style.transition = ''; mainEl.style.transform = ''; mainEl.style.opacity = ''; }
   function slide(dir) {

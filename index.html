@@ -78,8 +78,12 @@ input[type=date]{text-align:center;background:var(--soft);font-weight:700;flex:1
 .cal .day.sel{outline:2px solid var(--acc);outline-offset:-2px;background:var(--soft)}
 .sat{color:var(--sat)}.sun{color:var(--sun)}
 /* レポート */
-.donut{display:block;width:260px;height:260px;margin:12px auto}
+.donut{display:block;width:300px;height:300px;max-width:100%;margin:8px auto}
 .donut text{fill:var(--text)}
+.donut text.lb{fill:#fff;stroke:rgba(0,0,0,.6);stroke-width:.45;paint-order:stroke;pointer-events:none}
+.donut circle{-webkit-tap-highlight-color:transparent}
+.sh{display:flex;align-items:center;gap:8px;padding:6px 12px 6px 6px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:1;min-height:52px}
+.sh b{flex:1;font-size:17px}
 .rrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;background:var(--card);padding:6px 16px;min-height:56px}
 .rrow .nm{flex:1;font-weight:700}.rrow .am{font-weight:700;font-size:17px}.rrow .pc{color:var(--sub);font-size:13px;width:48px;text-align:right}
 .rrow.on{background:var(--soft)}
