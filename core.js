@@ -54,7 +54,8 @@
       '映画', 'シネマ', 'シアター', 'TOHO', 'ユナイテッド・シネマ', 'ムービックス', 'ワーナー・マイカル', '劇団', 'ミュージカル', '歌舞伎座', '東京ドーム', '武道館',
       'コンサート', 'ライブハウス', 'Zepp', 'ぴあ', 'イープラス', 'ローチケ', 'チケット', 'フェス', 'ディズニー', 'ユニバーサル', 'USJ', '遊園地', '水族館',
       '動物園', '博物館', '美術館', 'プラネタリウム', 'テーマパーク', 'サンリオ', 'ゲーム', 'Steam', 'PlayStation', 'プレイステーション', 'Nintendo', 'ニンテンドー', 'Xbox',
-      'TSUTAYA', 'ツタヤ', 'ゲオ', 'ペアーズ', 'タップル', 'tinder', '占い', 'karaoke', 'noraebang']),
+      'TSUTAYA', 'ツタヤ', 'ゲオ', 'ペアーズ', 'タップル', 'tinder', '占い', 'karaoke', 'noraebang',
+      'スワローズ', 'ジャイアンツ', 'タイガース', 'ベイスターズ', 'カープ', 'ドラゴンズ', 'ライオンズ', 'イーグルス', 'ホークス', 'ファイターズ', 'マリーンズ', 'バファローズ']),
     G('旅行', ['ホテル', 'hotel', 'リゾート', '東横inn', '旅館', '民宿', 'ゲストハウス', '東横イン', 'ルートイン', 'アパホテル', 'スーパーホテル', 'ドーミーイン', 'ヒルトン', 'マリオット',
       '楽天トラベル', 'じゃらん', '一休', 'Booking.com', 'Agoda', 'エクスペディア', 'Expedia', 'Airbnb', 'トリバゴ', 'JAL', '日本航空', '全日空', '全日本空輸',
       'Peach Aviation', 'ジェットスター', 'Jetstar', 'スカイマーク', 'エアドゥ', 'ソラシド', 'フジドリーム', 'スプリング・ジャパン', '春秋航空', 'Aviation', '航空', 'エアライン',
@@ -92,17 +93,22 @@
       'ヨークベニマル', 'ヤオコー', '成城石井', 'カスミ', 'ベルク', 'アピタ', 'ユニー', 'ダイエー', '万代', 'ビッグ・エー', 'ビッグエー', 'ロピア', 'コープ', 'マルヤ', 'スーパー',
       '青果', '精肉', '鮮魚', '食品', '食料', 'フードスクエア', '八百屋', '惣菜', 'トロ政', '康樂園', 'ちばチャン', 'だるまのめ', 'ramen', 'kitchen', 'restaurant', 'dining', 'sushi', 'pizza', 'curry', 'udon', 'soba', 'noodle',
       'steak', 'burger', 'bbq', 'bistro', 'gamjatang', 'kimchi', 'galbi', 'samgyeopsal', 'bulgogi', 'tteokbokki', 'freshway', 'fresh market',
-      'emart', 'homeplus', 'lotte mart', 'NEXCO', 'SAPA', 'サービスエリア', 'パーキングエリア',
+      'emart', 'homeplus', 'lotte mart', 'マイバスケット', 'ジドウハンバイキ', 'ネギシ', 'NEXCO', 'SAPA', 'サービスエリア', 'パーキングエリア',
       '自動販売機', '自販機', 'ダイドードリンコ', 'ビバレッジ', 'コカ・コーラ', 'サントリー', '伊藤園', 'アサヒ飲料', 'キッチンカー']),
     // 駅名・路線名を含むが交通費ではない店(交通費より先に判定する)
     G('その他', ['百貨店', '東急ハンズ', 'ハンズ', 'ロフト', 'パルコ', 'マルイ', 'ルミネ', 'アトレ']),
     G('交通費', ['JR', 'Suica', 'スイカ', 'PASMO', 'パスモ', 'ICOCA', 'イコカ', '地下鉄', '東京メトロ', '都営', '東急', '小田急', '京王', '西武', '東武', '京成', '京急', '相鉄',
       '阪急', '阪神', '近鉄', '南海', '京阪', '名鉄', '西鉄', '電鉄', '鉄道', 'モノレール', '交通局', 'タクシー', '日本交通', '第一交通', 'S.RIDE', 'DiDi', 'Uber',
       'HELLO CYCLING', 'ハローサイクリング', 'LUUP', 'ルーポ', 'バイクシェア', 'レンタカー', 'タイムズ', 'カーシェア', 'リパーク', 'コインパーク', 'パーキング', '駐車', 'NPC24',
-      'ナビパーク', 'ETCカード', '首都高', '高速道路', '高速バス', '路線バス', '市バス', '都バス', 'ウィラー', 'WILLER', 'バスターミナル', 'バス停', '自転車', 'taxi', 'metro', 'subway', 'railroad', 'korail', 't-money', 'transportation'])
+      'ナビパーク', 'ETCカード', '首都高', '高速道路', '高速バス', '路線バス', '市バス', '都バス', 'ウィラー', 'WILLER', 'バスターミナル', 'バス停', '自転車', 'etc東日本', 'etc中日本', 'etc西日本', 'etc特別割引', 'etc冬期割引', 'etc割引', 'etc名古屋', 'etc栃木', 'etc首都高', 'etc阪神', 'etc本四', 'taxi', 'metro', 'subway', 'railroad', 'korail', 't-money', 'transportation'])
   );
 
-  const norm = s => String(s).normalize('NFKC').toLowerCase();
+  // 照合用の正規化。NFKC+小文字化に加え、QUICPay等の表記ゆれ(長音が「-」、小書き仮名が大書き: マイバスケツト/ドンキホ-テ)をそろえる。
+  // ルール側と店名側の両方に同じ変換をかけるので、通常の表記とも一致する。
+  const SMALL = 'ァィゥェォッャュョヮ', BIG = 'アイウエオツヤユヨワ';
+  const norm = s => String(s).normalize('NFKC').toLowerCase()
+    .replace(/([ァ-ヴ])-/g, '$1ー')
+    .replace(/[ァィゥェォッャュョヮ]/g, c => BIG[SMALL.indexOf(c)]);
   const DEFAULT_NORM = DEFAULT_RULES.map(([k, c]) => [norm(k), c]);
 
   const TYPE_MAP = { '支払い': 'expense', '請求書払い': 'expense', '送った金額': 'expense', '受け取った金額': 'income' };
@@ -183,12 +189,14 @@
   //  ・取引番号がないため、日付+金額+利用先+同一明細内の連番でidを作る(同じファイルの再取り込みは重複扱い)
   function parseSaison(text, rules) {
     const rows = parseCsv(text);
-    const hi = rows.findIndex(r => r.some(c => c.trim() === 'ご利用日') && r.some(c => c.trim().startsWith('ご利用金額')));
+    // 見出しは「利用日,ご利用店名及び商品名,…,利用金額,備考」。「ご利用日」「ご利用先ならびに…」「ご利用金額」の表記も受け付ける
+    const isDate = c => /^(ご)?利用日$/.test(c.trim()), isAmt = c => /^(ご)?利用金額/.test(c.trim());
+    const hi = rows.findIndex(r => r.some(isDate) && r.some(isAmt));
     if (hi < 0) throw new Error('セゾンカードの利用明細CSVではありません');
     const h = rows[hi].map(s => s.trim());
     const col = (pred, dflt) => { const i = h.findIndex(pred); return i < 0 ? dflt : i; };
-    const iDate = col(c => c === 'ご利用日', 0), iPayee = col(c => c.startsWith('ご利用先'), 1);
-    const iAmt = col(c => c.startsWith('ご利用金額'), 5), iRem = col(c => c === '備考', 6);
+    const iDate = col(isDate, 0), iPayee = col(c => /^(ご)?利用(先|店名)/.test(c), 1);
+    const iAmt = col(isAmt, 5), iRem = col(c => c === '備考', 6);
 
     const meta = { format: 'saison', card: '', payDate: '', bill: 0 };
     for (const r of rows.slice(0, hi)) {
@@ -237,7 +245,7 @@
     const rows = parseCsv(text);
     const has = (re) => rows.slice(0, 12).some(r => r.some(c => re.test(c.trim())));
     if (has(/^取引日$/) && has(/^取引内容$/)) { const r = parsePayPay(text, rules); r.meta = { format: 'paypay' }; return r; }
-    if (has(/^ご利用日$/)) return parseSaison(text, rules);
+    if (has(/^(ご)?利用日$/)) return parseSaison(text, rules);
     throw new Error('PayPayまたはセゾンカードのCSVではありません');
   }
 
