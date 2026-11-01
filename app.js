@@ -73,9 +73,9 @@
       <label>収支</label>
       <select name="type"><option value="expense" ${t.type !== 'income' ? 'selected' : ''}>支出</option><option value="income" ${t.type === 'income' ? 'selected' : ''}>収入</option></select>
       <div class="row"><div><label>日付</label><input type="date" name="date" value="${esc(t.date)}" required></div>
-      <div><label>金額(円)</label><input name="amount" inputmode="numeric" pattern="[0-9,]*" value="${t.amount || ''}" placeholder="2600" required></div></div>
-      <label>取引先</label><input name="payee" value="${esc(t.payee)}" placeholder="例: サウナ">
-      <label>メモ</label><input name="memo" value="${esc(t.memo)}" placeholder="例: サウナ、寿司">
+      <div><label>金額(円)</label><input name="amount" inputmode="numeric" pattern="[0-9,]*" value="${t.amount || ''}" placeholder="0" required></div></div>
+      <label>取引先</label><input name="payee" value="${esc(t.payee)}" placeholder="店名、送金先、受け取り元">
+      <label>メモ</label><input name="memo" value="${esc(t.memo)}" placeholder="メモ">
       <label>カテゴリ</label><select name="category">${cats}</select>`;
   }
 
