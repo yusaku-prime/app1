@@ -17,6 +17,7 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;overscroll-behavior:none}
 html{-webkit-text-size-adjust:100%}
+*{touch-action:manipulation} /* ダブルタップでの拡大を無効にする */
 main{touch-action:pan-y;will-change:transform}
 /* 縦画面のみ: 横向きでは操作を止めて案内を出す */
 @media (orientation:landscape) and (max-height:500px){body>*{display:none!important}body::before{content:"縦向きでお使いください";display:block;text-align:center;padding:30vh 16px 0;color:var(--sub);font-size:18px}}
