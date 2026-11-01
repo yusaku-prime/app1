@@ -2,23 +2,47 @@
 (function (root) {
   'use strict';
 
-  const CATEGORIES = ['外食', 'コンビニ', '遊び', '衣服', '日用品', '美容', '交通', 'サブスク・通信', '送金', 'カード引落', '収入', 'その他'];
+  // 初期カテゴリ(名前 + 種別ごとに一意)
+  const DEFAULT_CATS = [
+    { name: '食費', type: 'expense', icon: '🍽️', color: '#f08c2e' },
+    { name: '衣服', type: 'expense', icon: '👕', color: '#2a3ea0' },
+    { name: '教育費', type: 'expense', icon: '📚', color: '#e04a5f' },
+    { name: '交通費', type: 'expense', icon: '🚃', color: '#a0522d' },
+    { name: '遊び', type: 'expense', icon: '🎮', color: '#f2c94c' },
+    { name: 'その他', type: 'expense', icon: '⭐', color: '#3aa0e8' },
+    { name: 'カフェ', type: 'expense', icon: '🍰', color: '#f6d86b' },
+    { name: 'ガソリン', type: 'expense', icon: '⛽', color: '#c2185b' },
+    { name: '駐輪場', type: 'expense', icon: '🚲', color: '#e53935' },
+    { name: '風呂', type: 'expense', icon: '♨️', color: '#43a047' },
+    { name: '美容', type: 'expense', icon: '💄', color: '#a61e63' },
+    { name: '飲み', type: 'expense', icon: '🍷', color: '#e5c100' },
+    { name: '賭け', type: 'expense', icon: '🎰', color: '#d4a017' },
+    { name: '旅行', type: 'expense', icon: '✈️', color: '#e53935' },
+    { name: 'コンビニ', type: 'expense', icon: '🛒', color: '#8e5cf0' },
+    { name: '送金', type: 'expense', icon: '💸', color: '#607d8b' },
+    { name: 'カード引落', type: 'expense', icon: '💳', color: '#78909c' },
+    { name: '給料', type: 'income', icon: '💴', color: '#1f7a5a' },
+    { name: '受取', type: 'income', icon: '🎁', color: '#3aa0e8' },
+    { name: 'その他', type: 'income', icon: '⭐', color: '#7f8c8d' },
+  ];
 
   // 取引先名に含まれるキーワード → カテゴリ(先に一致したものを採用)
   const DEFAULT_RULES = [
     ['PayPayカード', 'カード引落'],
     ['ファミリーマート', 'コンビニ'], ['セブン', 'コンビニ'], ['ローソン', 'コンビニ'], ['NewDays', 'コンビニ'], ['ミニストップ', 'コンビニ'],
-    ['Apple', 'サブスク・通信'], ['Netflix', 'サブスク・通信'], ['Spotify', 'サブスク・通信'], ['Google', 'サブスク・通信'],
-    ['カラオケ', '遊び'], ['まねきねこ', '遊び'], ['歌広場', '遊び'], ['ビッグエコー', '遊び'], ['Darts', '遊び'], ['ZINO', '遊び'],
-    ['快活CLUB', '遊び'], ['すさび湯', '遊び'], ['湯楽', '遊び'], ['サウナ', '遊び'], ['温泉', '遊び'], ['ゲーム', '遊び'],
-    ['ユニクロ', '衣服'], ['アディダス', '衣服'], ['GU', '衣服'],
-    ['イオン', '日用品'], ['ドラッグ', '日用品'], ['ダイソー', '日用品'], ['アルカキット', '日用品'],
-    ['HAIR', '美容'], ['美容', '美容'], ['ヘア', '美容'],
-    ['JR', '交通'], ['Suica', '交通'], ['タクシー', '交通'], ['メトロ', '交通'],
-    ['居酒屋', '外食'], ['酒場', '外食'], ['酒陣', '外食'], ['焼', '外食'], ['やきとん', '外食'], ['寿司', '外食'], ['すし', '外食'],
-    ['餃子', '外食'], ['うなぎ', '外食'], ['ひつまぶし', '外食'], ['鳥貴族', '外食'], ['酔っ手羽', '外食'], ['とりいちず', '外食'],
-    ['漁港', '外食'], ['トロ政', '外食'], ['新時代', '外食'], ['塚田農場', '外食'], ['併呑', '外食'], ['いっちょかみ', '外食'],
-    ['ラーメン', '外食'], ['カフェ', '外食'], ['珈琲', '外食'], ['マクドナルド', '外食'], ['吉野家', '外食'], ['すき家', '外食'],
+    ['カラオケ', '遊び'], ['まねきねこ', '遊び'], ['歌広場', '遊び'], ['ビッグエコー', '遊び'], ['第一興商', '遊び'], ['Darts', '遊び'], ['ZINO', '遊び'],
+    ['快活CLUB', '遊び'], ['ゲーム', '遊び'],
+    ['すさび湯', '風呂'], ['湯楽', '風呂'], ['サウナ', '風呂'], ['温泉', '風呂'], ['銭湯', '風呂'],
+    ['ユニクロ', '衣服'], ['アディダス', '衣服'],
+    ['HAIR', '美容'], ['美容', '美容'], ['ヘア', '美容'], ['理容', '美容'],
+    ['JR', '交通費'], ['Suica', '交通費'], ['タクシー', '交通費'], ['メトロ', '交通費'],
+    ['ENEOS', 'ガソリン'], ['エネオス', 'ガソリン'], ['出光', 'ガソリン'], ['ガソリン', 'ガソリン'],
+    ['駐輪', '駐輪場'],
+    ['カフェ', 'カフェ'], ['珈琲', 'カフェ'], ['コーヒー', 'カフェ'], ['スターバックス', 'カフェ'], ['ドトール', 'カフェ'],
+    ['居酒屋', '飲み'], ['酒', '飲み'], ['やきとん', '飲み'], ['鳥貴族', '飲み'], ['酔っ手羽', '飲み'], ['とりいちず', '飲み'],
+    ['塚田農場', '飲み'], ['併呑', '飲み'], ['いっちょかみ', '飲み'], ['焼鳥', '飲み'],
+    ['寿司', '食費'], ['すし', '食費'], ['餃子', '食費'], ['うなぎ', '食費'], ['ひつまぶし', '食費'], ['漁港', '食費'], ['トロ政', '食費'],
+    ['新時代', '食費'], ['ラーメン', '食費'], ['マクドナルド', '食費'], ['吉野家', '食費'], ['すき家', '食費'], ['イオン', '食費'],
   ];
 
   const TYPE_MAP = { '支払い': 'expense', '請求書払い': 'expense', '送った金額': 'expense', '受け取った金額': 'income' };
@@ -72,7 +96,7 @@
       const amount = kind === 'income' ? toInt(r[iIn]) : toInt(r[iOut]);
       if (!kind || amount <= 0) { skipped[r[iType]] = (skipped[r[iType]] || 0) + 1; continue; }
       const payee = (r[iPayee] || '').trim();
-      const category = r[iType] === '送った金額' ? '送金' : kind === 'income' ? '収入' : categorize(payee, rules);
+      const category = r[iType] === '送った金額' ? '送金' : kind === 'income' ? '受取' : categorize(payee, rules);
       records.push({
         id: 'pp-' + r[iNo], date: r[iDate].slice(0, 10).replace(/\//g, '-'),
         type: kind, amount, payee, memo: '', category, source: 'paypay',
@@ -90,17 +114,18 @@
     return { merged: existing.concat(added), added: added.length, dup };
   }
 
-  function summarize(txs, month, excluded) {
+  // period は 'YYYY-MM'(月)または 'YYYY'(年)
+  function summarize(txs, period, excluded) {
     const ex = new Set(excluded || []);
     let expense = 0, income = 0;
-    const by = {};
+    const by = {}, byIn = {};
     for (const t of txs) {
-      if (!t.date.startsWith(month) || ex.has(t.category)) continue;
-      if (t.type === 'income') income += t.amount;
+      if (!t.date.startsWith(period) || ex.has(t.category)) continue;
+      if (t.type === 'income') { income += t.amount; byIn[t.category] = (byIn[t.category] || 0) + t.amount; }
       else { expense += t.amount; by[t.category] = (by[t.category] || 0) + t.amount; }
     }
-    const byCat = Object.entries(by).sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ category, amount }));
-    return { expense, income, balance: income - expense, byCat };
+    const list = o => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([category, amount]) => ({ category, amount }));
+    return { expense, income, balance: income - expense, byCat: list(by), byCatIn: list(byIn) };
   }
 
   function addMonths(month, d) {
@@ -118,6 +143,27 @@
     return out;
   }
 
+  // 日付ごとの収支 {YYYY-MM-DD: {e, i}}
+  function dailyTotals(txs, month, excluded) {
+    const ex = new Set(excluded || []);
+    const days = {};
+    for (const t of txs) {
+      if (!t.date.startsWith(month) || ex.has(t.category)) continue;
+      const o = days[t.date] || (days[t.date] = { e: 0, i: 0 });
+      if (t.type === 'income') o.i += t.amount; else o.e += t.amount;
+    }
+    return days;
+  }
+
+  function searchTxs(txs, q) {
+    const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!words.length) return [];
+    return txs.filter(t => {
+      const s = (t.payee + ' ' + t.memo + ' ' + t.category).toLowerCase();
+      return words.every(w => s.includes(w));
+    }).sort((a, b) => a.date < b.date ? 1 : a.date > b.date ? -1 : 0);
+  }
+
   function toCsv(txs) {
     const q = v => '"' + String(v).replace(/"/g, '""') + '"';
     const lines = ['日付,収支,金額,取引先,メモ,カテゴリ'];
@@ -127,5 +173,5 @@
     return '﻿' + lines.join('\r\n') + '\r\n';
   }
 
-  root.Core = { CATEGORIES, DEFAULT_RULES, parseCsv, parsePayPay, categorize, mergeImport, summarize, addMonths, monthlyExpense, toCsv };
+  root.Core = { DEFAULT_CATS, DEFAULT_RULES, parseCsv, parsePayPay, categorize, mergeImport, summarize, addMonths, monthlyExpense, dailyTotals, searchTxs, toCsv };
 })(typeof window !== 'undefined' ? window : globalThis);
