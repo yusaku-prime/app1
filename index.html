@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- 外部への通信・外部スクリプトの読み込み・インラインスクリプトを禁止する(データの持ち出し対策)。
+     使えるのは、このサイト自身のファイルだけ。画面の見た目用のstyle属性のみ許可している。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; manifest-src 'self'; worker-src 'self'; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; font-src 'none'">
 <title>家計簿</title>
 <meta name="theme-color" content="#f58a07">
 <meta name="apple-mobile-web-app-capable" content="yes">
