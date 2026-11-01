@@ -137,6 +137,7 @@
   }
 
   const pad2 = n => String(n).padStart(2, '0');
+  const PAYPAY_RE = /paypay|ペイペイ/, SAISON_RE = /セゾン|saison/;
 
   function toInt(s) {
     s = String(s == null ? '' : s).replace(/[,\s円]/g, '');
@@ -152,28 +153,54 @@
   }
   function categorize(payee, rules) { return matchRule(payee, rules) || 'その他'; }
 
-  // PayPayのCSV → {records, skipped:{取引内容:件数}}
+  // 支払い手段の表記を整える。「PayPayポイント (6円), PayPay残高 (187円)」→「PayPayポイント, PayPay残高」
+  const normMethod = s => String(s == null ? '' : s).replace(/\s*\([^)]*円\)/g, '').replace(/\s+/g, ' ').trim();
+  const methodParts = s => normMethod(s).split(/\s*,\s*/).filter(p => p && p !== '-');
+  // カード払いか。クレジット・PayPayカードなどが対象。ポイント・残高・銀行口座は含めない。
+  // カード番号などは、CSVに書かれている文字列をそのまま使い、コード側には何も書かない。
+  const isCardMethod = p => /クレジット|カード|visa|master|jcb|amex|american express|diners/.test(norm(p)) && !/ポイント|残高/.test(p);
+
+  // PayPayのCSV → {records, skipped:{取引内容:件数}, skippedAmt:{取引内容:金額}, meta}
+  // meta.methods: 支払い手段ごとの件数 / meta.cardPaid: カード払いの件数・金額・カード表記
   function parsePayPay(text, rules) {
     const rows = parseCsv(text);
     if (!rows.length) throw new Error('CSVが空です');
     const h = rows[0].map(s => s.trim());
     const ix = n => h.indexOf(n);
     const iDate = ix('取引日'), iOut = ix('出金金額（円）'), iIn = ix('入金金額（円）');
-    const iType = ix('取引内容'), iPayee = ix('取引先'), iNo = ix('取引番号');
+    const iType = ix('取引内容'), iPayee = ix('取引先'), iNo = ix('取引番号'), iMethod = ix('取引方法');
     if ([iDate, iOut, iIn, iType, iPayee, iNo].some(i => i < 0)) throw new Error('PayPayの取引履歴CSVではありません');
-    const records = [], skipped = {};
+    const records = [], skipped = {}, skippedAmt = {};
+    const meta = { format: 'paypay', methods: {}, cardPaid: { n: 0, amount: 0, labels: [] } };
     for (const r of rows.slice(1)) {
       const kind = TYPE_MAP[r[iType]];
       const amount = kind === 'income' ? toInt(r[iIn]) : toInt(r[iOut]);
-      if (!kind || amount <= 0) { skipped[r[iType]] = (skipped[r[iType]] || 0) + 1; continue; }
+      if (!kind || amount <= 0) {
+        skipped[r[iType]] = (skipped[r[iType]] || 0) + 1;
+        skippedAmt[r[iType]] = (skippedAmt[r[iType]] || 0) + toInt(r[iIn]) + toInt(r[iOut]);
+        continue;
+      }
       const payee = (r[iPayee] || '').trim();
       const category = r[iType] === '送った金額' ? '送金' : kind === 'income' ? '受取' : categorize(payee, rules);
-      records.push({
+      const method = iMethod < 0 ? '' : normMethod(r[iMethod]);
+      const rec = {
         id: 'pp-' + r[iNo], date: r[iDate].slice(0, 10).replace(/\//g, '-'),
-        type: kind, amount, payee, memo: '', category, source: 'paypay',
-      });
+        type: kind, amount, payee, memo: '', category, source: 'paypay', method: method === '-' ? '' : method,
+      };
+      // セゾンカードの請求の支払いは、セゾンの利用明細で数える(dep='saison')。明細が取り込み済みの期間だけ、集計から外す
+      if (kind === 'expense' && category !== 'カード引落' && SAISON_RE.test(norm(payee))) { rec.dep = 'saison'; rec.cat0 = category; }
+      records.push(rec);
+      if (kind === 'expense') {
+        const parts = methodParts(method);
+        for (const p of parts) meta.methods[p] = (meta.methods[p] || 0) + 1;
+        const cards = parts.filter(isCardMethod);
+        if (cards.length) {
+          meta.cardPaid.n++; meta.cardPaid.amount += amount;
+          for (const c of cards) if (!meta.cardPaid.labels.includes(c)) meta.cardPaid.labels.push(c);
+        }
+      }
     }
-    return { records, skipped };
+    return { records, skipped, skippedAmt, meta };
   }
 
   function hash36(s) {
@@ -227,12 +254,14 @@
       const local = foreign ? rem.replace(/^.*現地通貨額[:：]?\s*/, '') : '';
       const key = date + '|' + amount + '|' + p;
       seen[key] = (seen[key] || 0) + 1;
+      // ルールに当てはまらない海外利用は「旅行」、それ以外は「その他」。返金(マイナス)は「受取」
+      const category = signed < 0 ? '受取' : (matchRule(p, rules) || (foreign ? '旅行' : 'その他'));
       last = {
         id: 'sz-' + date.replace(/-/g, '') + '-' + amount + '-' + hash36(p) + '-' + seen[key], date,
-        type: signed < 0 ? 'income' : 'expense', amount, payee: p, memo: '', local, place: '',
-        // ルールに当てはまらない海外利用は「旅行」、それ以外は「その他」。返金(マイナス)は「受取」
-        category: signed < 0 ? '受取' : (matchRule(p, rules) || (foreign ? '旅行' : 'その他')), source: 'saison',
+        type: signed < 0 ? 'income' : 'expense', amount, payee: p, memo: '', local, place: '', category, source: 'saison',
       };
+      // PayPay関連の行(チャージ・PayPay払いなど)は、PayPay側の明細で数える(dep='paypay')。二重にならないよう reconcile で調整する
+      if (signed > 0 && PAYPAY_RE.test(norm(p))) { last.dep = 'paypay'; last.cat0 = category; }
       records.push(last);
     }
     for (const t of records) { t.memo = [t.local, t.place].filter(Boolean).join(' / '); delete t.local; delete t.place; }
@@ -244,9 +273,33 @@
   function parseStatement(text, rules) {
     const rows = parseCsv(text);
     const has = (re) => rows.slice(0, 12).some(r => r.some(c => re.test(c.trim())));
-    if (has(/^取引日$/) && has(/^取引内容$/)) { const r = parsePayPay(text, rules); r.meta = { format: 'paypay' }; return r; }
+    if (has(/^取引日$/) && has(/^取引内容$/)) return parsePayPay(text, rules);
     if (has(/^(ご)?利用日$/)) return parseSaison(text, rules);
     throw new Error('PayPayまたはセゾンカードのCSVではありません');
+  }
+
+  // 二重計上の調整(取り込みのたびに、保存済みの全取引に対して行う)。
+  // 取引の dep は「この行の買い物は、どの明細(paypay / saison)で数えるか」を表す。
+  //  ・その明細が取り込み済みで、日付がその明細の期間内 → 向こうで数えるので、この行は集計から外す(カテゴリ「カード引落」)
+  //  ・その明細が未取り込み、または期間外 → この行を数える(抜けを防ぐ)。カテゴリは元(cat0)に戻す
+  // 手動でカテゴリを変えた取引(manual)は触らない。取り込む順番に関係なく、同じ結果になる。
+  function reconcile(txs) {
+    const cov = {};
+    for (const t of txs) {
+      if (t.source !== 'paypay' && t.source !== 'saison') continue;
+      const c = cov[t.source] || (cov[t.source] = { from: t.date, to: t.date });
+      if (t.date < c.from) c.from = t.date;
+      if (t.date > c.to) c.to = t.date;
+    }
+    const stat = { covered: 0, kept: 0, changed: 0, coverage: cov };
+    for (const t of txs) {
+      if (!t.dep || t.manual) continue;
+      const c = cov[t.dep], covered = !!c && t.date >= c.from && t.date <= c.to;
+      const target = covered ? 'カード引落' : (t.cat0 || 'その他');
+      if (t.category !== target) { t.category = target; stat.changed++; }
+      if (covered) stat.covered++; else stat.kept++;
+    }
+    return stat;
   }
 
   // 既存データに追加(idが同じものは重複として無視)
@@ -317,5 +370,5 @@
     return '﻿' + lines.join('\r\n') + '\r\n';
   }
 
-  root.Core = { DEFAULT_CATS, DEFAULT_RULES, parseCsv, parsePayPay, parseSaison, parseStatement, categorize, mergeImport, summarize, addMonths, monthlyExpense, dailyTotals, searchTxs, toCsv };
+  root.Core = { DEFAULT_CATS, DEFAULT_RULES, parseCsv, parsePayPay, parseSaison, parseStatement, reconcile, categorize, mergeImport, summarize, addMonths, monthlyExpense, dailyTotals, searchTxs, toCsv };
 })(typeof window !== 'undefined' ? window : globalThis);

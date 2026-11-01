@@ -211,7 +211,7 @@
 
   function openEdit(id) {
     const t = state.txs.find(x => x.id === id);
-    if (t) openSheet(`${sheetHead('取引を編集')}${entryForm(t, true)}`);
+    if (t) openSheet(`${sheetHead('取引を編集')}${t.method ? `<div class="muted" style="padding:8px 16px;background:var(--card)">支払い手段: ${esc(t.method)}</div>` : ''}${entryForm(t, true)}`);
   }
 
   // 日付つきの取引行(カテゴリ別の取引一覧用)
@@ -263,10 +263,13 @@
       id: id || 'm-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       date, type: f.type.value, amount, payee, memo, category: f.category.value, source: old ? old.source : 'manual',
     };
+    // カテゴリを手で変えた取引は、二重計上の自動調整(reconcile)の対象外にする
+    const changed = !!old && old.category !== t.category;
     if (old) Object.assign(old, t); else state.txs.push(t);
+    if (changed) old.manual = true;
     if (edit && f.applyAll && f.applyAll.checked && payee) {
       state.rules = state.rules.filter(r => r.keyword !== payee).concat({ keyword: payee, category: t.category });
-      state.txs.forEach(x => { if (x.payee === payee && x.type === t.type) x.category = t.category; });
+      state.txs.forEach(x => { if (x.payee === payee && x.type === t.type) { if (x.category !== t.category) x.manual = true; x.category = t.category; } });
     }
     save();
     if (edit) { render(true); reopen(); toast('保存しました'); return; }
@@ -281,16 +284,60 @@
     return text;
   }
 
+  const sumAmt = list => list.reduce((a, t) => a + t.amount, 0);
+  // 取り込まなかった取引の理由(PayPay)
+  const SKIP_WHY = {
+    'チャージ': '銀行・カードからPayPayへの資金の移動です。使った時に数えます',
+    'ポイント、残高の獲得': 'ポイントの付与です',
+    '期間限定ポイントの期限切れ': 'ポイントの失効です',
+  };
+
   async function importCsv(file) {
     const box = $('importResult');
     try {
-      const { records, skipped, meta } = Core.parseStatement(await readText(file), state.rules);
+      const { records, skipped, skippedAmt, meta } = Core.parseStatement(await readText(file), state.rules);
+      const preIds = new Set(state.txs.map(t => t.id));
+      const before = new Map(state.txs.filter(t => t.dep).map(t => [t.id, t.category]));
       const r = Core.mergeImport(state.txs, records);
-      state.txs = r.merged; normalize(state); save();
-      const sk = Object.entries(skipped).map(([k, v]) => `${esc(k)} ${v}件`).join('、') || 'なし';
+      state.txs = r.merged; normalize(state);
+      Core.reconcile(state.txs); // 二重計上の調整(PayPay⇔セゾン)
+      save();
       const saison = meta.format === 'saison';
-      const info = saison ? `<p class="muted">お支払日 ${esc(meta.payDate || '-')} / 請求額 ${meta.bill ? yen(meta.bill) : '-'} / 取り込んだ明細の合計 ${yen(meta.total)}<br>※請求額との差は、手数料や金利などの可能性があります。</p>` : '';
-      box.innerHTML = `<p><b>取り込み結果(${saison ? 'セゾンカード' : 'PayPay'})</b><br>追加 ${r.added}件 / 重複 ${r.dup}件</p>${info}<p class="muted">取り込まなかったもの: ${sk}</p><button class="primary" data-act="tab" data-v="cal">カレンダーを見る</button>`;
+      const added = state.txs.filter(t => records.some(x => x.id === t.id) && !preIds.has(t.id));
+      const addedIds = new Set(added.map(t => t.id));
+      const notes = [];
+
+      // 取り込んだ行のうち、他の明細で数える行(dep)の扱い
+      const SRC = { paypay: 'PayPay', saison: 'セゾンカード' };
+      for (const src of ['paypay', 'saison']) {
+        const rows = added.filter(t => t.dep === src);
+        if (!rows.length) continue;
+        const cov = rows.filter(t => t.category === 'カード引落' && t.cat0 !== 'カード引落'), keep = rows.filter(t => !cov.includes(t));
+        const what = src === 'paypay' ? 'PayPay関連の行' : 'セゾンカードの請求の支払い';
+        if (cov.length) notes.push(`${what} ${cov.length}件(計${yen(sumAmt(cov))})は、${SRC[src]}の明細で数えるため、集計から外しました。`);
+        if (keep.length) notes.push(`${what} ${keep.length}件(計${yen(sumAmt(keep))})は、この期間の${SRC[src]}の明細が未取り込みのため、集計に含めました。${SRC[src]}の明細を取り込むと、自動で二重を外します。`);
+      }
+      // 以前に取り込んだ行が、今回の明細で二重になったため外れたもの
+      const adjusted = state.txs.filter(t => t.dep && preIds.has(t.id) && before.get(t.id) !== t.category);
+      if (adjusted.length) notes.push(`取り込み済みの ${adjusted.length}件(計${yen(sumAmt(adjusted))})が、今回の明細と二重になるため、集計から外しました。`);
+
+      let detail = '';
+      if (saison) {
+        detail = `<p class="muted">お支払日 ${esc(meta.payDate || '-')} / 請求額 ${meta.bill ? yen(meta.bill) : '-'} / 取り込んだ明細の合計 ${yen(meta.total)}<br>※請求額との差は、手数料や金利などの可能性があります。</p>`;
+      } else {
+        const ms = Object.entries(meta.methods || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}件`).join(' / ');
+        if (ms) detail += `<p class="muted">支払い手段: ${ms}</p>`;
+        if (meta.cardPaid && meta.cardPaid.n) {
+          notes.push(`カード払い ${meta.cardPaid.n}件(計${yen(meta.cardPaid.amount)}、${meta.cardPaid.labels.map(esc).join('・')})も、PayPayの明細の支出として数えています。そのカードの利用明細を別に取り込むと、同じ買い物が二重になります。`);
+        }
+        const bills = added.filter(t => t.category === 'カード引落' && !t.dep);
+        if (bills.length) notes.push(`「カード引落」${bills.length}件(計${yen(sumAmt(bills))})は、カードの請求の支払いです。買い物の分は別に数えるため、集計から外しています(メニューで切り替えられます)。`);
+      }
+      const sk = Object.entries(skipped).map(([k, v]) => `<li>${esc(k)} ${v}件${skippedAmt && skippedAmt[k] ? `(計${yen(skippedAmt[k])})` : ''}${SKIP_WHY[k] ? ` … ${SKIP_WHY[k]}` : ''}</li>`).join('');
+      box.innerHTML = `<p><b>取り込み結果(${SRC[meta.format]})</b><br>追加 ${r.added}件 / 重複 ${r.dup}件</p>${detail}
+        ${notes.map(n => `<p class="note">${n}</p>`).join('')}
+        <p class="muted" style="margin-bottom:2px">取り込まなかったもの${sk ? '' : ': なし'}</p>${sk ? `<ul class="muted" style="margin-top:0;padding-left:20px">${sk}</ul>` : ''}
+        <button class="primary" data-act="tab" data-v="cal">カレンダーを見る</button>`;
       if (records.length) ui.month = records.reduce((m, t) => t.date > m ? t.date : m, '0000').slice(0, 7);
     } catch (e) {
       box.innerHTML = `<p class="danger">取り込めませんでした: ${esc(e.message)}</p>`;
