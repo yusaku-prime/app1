@@ -14,12 +14,29 @@
   const ICONS = ['🍽️', '👕', '📚', '🚃', '🎮', '⭐', '🍰', '⛽', '🚲', '♨️', '💄', '🍷', '🎰', '✈️', '🛒', '💸', '💳', '🏠', '💡', '📱', '🎁', '💴', '🐶', '🏥', '🎬', '☕', '🍜', '🍺', '🧴', '🎓'];
 
   // ---------- 保存 ----------
+  const CAT_VER = 2; // 標準カテゴリの版。上げたら、古い保存データに新しいカテゴリだけを足す
   function defaults() {
-    return { txs: [], rules: [], excluded: ['カード引落'], cats: Core.DEFAULT_CATS.map(c => Object.assign({}, c)) };
+    return { txs: [], rules: [], excluded: ['カード引落'], cats: Core.DEFAULT_CATS.map(c => Object.assign({}, c)), catVer: CAT_VER };
+  }
+  // 保存データ(またはバックアップ)から状態を作る。catVer がない古いデータは版1として扱う
+  function fromSaved(s) {
+    const st = Object.assign(defaults(), s);
+    st.catVer = (s && s.catVer) || 1;
+    return normalize(st);
   }
   function normalize(st) {
     if (!Array.isArray(st.cats) || !st.cats.length) st.cats = defaults().cats;
     delete st.budget; // 予算機能は廃止(旧データに残っていれば捨てる)
+    // 標準カテゴリが増えた版では、足りない新カテゴリだけを足す(利用者が消した既存カテゴリは復活させない)
+    if ((st.catVer || 1) < CAT_VER) {
+      for (const c of Core.DEFAULT_CATS) {
+        if ((c.since || 1) > (st.catVer || 1) && !st.cats.some(x => x.name === c.name && x.type === c.type)) {
+          const i = st.cats.findIndex(x => x.type === c.type && x.name === '送金');
+          st.cats.splice(i < 0 ? st.cats.length : i, 0, Object.assign({}, c));
+        }
+      }
+    }
+    st.catVer = CAT_VER;
     for (const t of st.txs) {
       if (!st.cats.some(c => c.name === t.category && c.type === t.type)) {
         st.cats.push({ name: t.category, type: t.type, icon: '⭐', color: '#7f8c8d' });
@@ -30,7 +47,7 @@
   function load() {
     let s = null;
     try { s = JSON.parse(localStorage.getItem(KEY)); } catch (e) { /* 保存領域が使えない場合は空で開始 */ }
-    return normalize(Object.assign(defaults(), s && Array.isArray(s.txs) ? s : {}));
+    return s && Array.isArray(s.txs) ? fromSaved(s) : normalize(defaults());
   }
   let state = load();
   let ui = {
@@ -185,7 +202,9 @@
     const ex = names.map(n => `<label class="chk" style="margin:6px 0"><input type="checkbox" data-act="toggleEx" data-v="${esc(n)}" ${state.excluded.includes(n) ? 'checked' : ''}>${esc(n)}</label>`).join('');
     const rules = state.rules.length ? state.rules.map((r, i) => `<div class="tx" style="min-height:48px"><div class="l"><div>${esc(r.keyword)}</div><small>→ ${esc(r.category)}</small></div><button data-act="rmRule" data-v="${i}" class="danger">削除</button></div>`).join('') : '<div class="muted">まだありません。取引を編集するとき「同じ取引先をすべて」を選ぶと追加されます。</div>';
     return `<div class="top"><b style="margin:0 auto">メニュー</b></div>
-      <h2>カテゴリ</h2><div class="card"><div class="row"><button data-act="editCats" data-v="expense">支出カテゴリの編集</button><button data-act="editCats" data-v="income">収入カテゴリの編集</button></div></div>
+      <h2>カテゴリ</h2><div class="card"><div class="row"><button data-act="editCats" data-v="expense">支出カテゴリの編集</button><button data-act="editCats" data-v="income">収入カテゴリの編集</button></div>
+        <p class="muted" style="margin-bottom:6px">取り込み済みのPayPay・セゾンの取引に、最新の自動分類ルールを当て直します。手入力の取引と、手で直した取引は変わりません。</p>
+        <button data-act="recat" style="width:100%">自動分類をやり直す</button></div>
       <h2>CSVを取り込む(PayPay・セゾンカード)</h2><div class="card"><p class="muted" style="margin-top:0">PayPayの取引履歴CSV、またはセゾンカードの利用明細CSVを選びます。形式は自動で判定します。同じ取引は2回入りません。PayPayのチャージ・ポイントは取り込みません。海外利用でカテゴリが決まらないものは「旅行」になります。</p><input type="file" id="csvFile" accept=".csv,text/csv"><div id="importResult"></div></div>
       <h2>集計から除外するカテゴリ</h2><div class="card">${ex}</div>
       <h2>自分のカテゴリ規則</h2><div class="list">${rules}</div>
@@ -356,7 +375,7 @@
       const s = JSON.parse(await readText(file));
       if (!s || !Array.isArray(s.txs)) throw new Error('家計簿のバックアップではありません');
       if (!confirm(`現在の${state.txs.length}件を、バックアップの${s.txs.length}件で置き換えます。よろしいですか。`)) return;
-      state = normalize(Object.assign(defaults(), s));
+      state = fromSaved(s);
       save(); render(); toast('復元しました');
     } catch (e) { toast('復元できませんでした: ' + e.message); }
   }
@@ -415,6 +434,14 @@
         state.excluded = el.checked ? state.excluded.concat(v) : state.excluded.filter(c => c !== v); save(); break;
       case 'rmRule': state.rules.splice(+v, 1); save(); render(); break;
       case 'editCats': ui.catType = v; catEditor(); break;
+      case 'recat': {
+        const n = Core.recategorize(state.txs, state.rules, { dry: true });
+        if (!n) { toast('変わる取引はありません'); break; }
+        if (confirm(`取り込み済みの取引のうち ${n}件のカテゴリが、最新の自動分類ルールで変わります。\n手入力と、手で直した取引は変わりません(古い版で直した分は記録がなく、戻る場合があります)。\n先にJSONのバックアップをとっておくと安心です。実行しますか。`)) {
+          Core.recategorize(state.txs, state.rules); normalize(state); save(); render(true); toast(`${n}件のカテゴリを更新しました`);
+        }
+        break;
+      }
       case 'pickIcon': ui.newIcon = v; catEditor(); break;
       case 'addCat': {
         const name = $('newCatName').value.trim();

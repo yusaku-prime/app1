@@ -19,6 +19,11 @@
     { name: '賭け', type: 'expense', icon: '🎰', color: '#d4a017' },
     { name: '旅行', type: 'expense', icon: '✈️', color: '#e53935' },
     { name: 'コンビニ', type: 'expense', icon: '🛒', color: '#8e5cf0' },
+    // since: 追加した版。古い保存データには、起動時にこの版以降のカテゴリだけを足す(消したカテゴリを復活させないため)
+    { name: 'アマゾン', type: 'expense', icon: '📦', color: '#ff9900', since: 2 },
+    { name: 'サブスク', type: 'expense', icon: '🔁', color: '#6d4aff', since: 2 },
+    { name: '通信料', type: 'expense', icon: '📱', color: '#2f8fd8', since: 2 },
+    { name: '皮膚科', type: 'expense', icon: '🩺', color: '#2e9d5b', since: 2 },
     { name: '送金', type: 'expense', icon: '💸', color: '#607d8b' },
     { name: 'カード引落', type: 'expense', icon: '💳', color: '#78909c' },
     { name: '給料', type: 'income', icon: '💴', color: '#1f7a5a' },
@@ -33,9 +38,13 @@
   const G = (cat, words) => words.map(w => [w, cat]);
   const DEFAULT_RULES = [].concat(
     G('カード引落', ['PayPayカード', 'カード請求', 'ご利用代金']),
-    // ネット・通信サービスは該当カテゴリがないため「その他」に固定(海外利用の「旅行」扱いにしない)
-    G('その他', ['Netflix', 'ネットフリックス', 'Amazon', 'アマゾン', 'Anthropic', 'Claude', 'OpenAI', 'ChatGPT', 'GitHub', 'Google', 'appleサービス', 'apple.com',
-      'itunes', 'app store', 'Microsoft', 'Spotify', 'Adobe', 'Dropbox', 'YouTube', 'IIJ', 'NTT', 'ドコモ', 'ソフトバンク', '楽天モバイル']),
+    G('アマゾン', ['Amazon', 'アマゾン']),
+    G('サブスク', ['Netflix', 'ネットフリックス', 'Spotify', 'YouTube', 'ユーネクスト', 'u-next', 'Hulu', 'Disney+', 'ディズニープラス', 'Apple Music',
+      'Anthropic', 'Claude', 'OpenAI', 'ChatGPT', 'Adobe', 'Dropbox', 'appleサービス', 'apple.com', 'itunes', 'app store']),
+    G('通信料', ['IIJ', 'NTT', 'ドコモ', 'ソフトバンク', '楽天モバイル', 'ワイモバイル', 'UQ mobile', 'ahamo', 'povo', 'LINEMO', 'mineo', 'BIGLOBE', 'ニフティ', 'So-net', 'NURO']),
+    G('皮膚科', ['皮膚科']),
+    // 該当カテゴリがないネットサービスは「その他」に固定(海外利用の「旅行」扱いにしない)
+    G('その他', ['GitHub', 'Google', 'Microsoft']),
     G('賭け', ['JRA', 'ウインズ', 'WINS', '馬券', '競馬', '競輪', '競艇', 'ボートレース', 'オートレース', 'オッズパーク', 'SPAT4', 'UMACA',
       'パチンコ', 'パチスロ', 'スロット', 'マルハン', 'ダイナム', 'ガイア', 'ベラジョン', 'カジノ', 'ナンバーズ', '宝くじ', '麻雀', '雀荘']),
     G('ガソリン', ['ENEOS', 'エネオス', '出光', 'idemitsu', 'コスモ石油', '昭和シェル', 'シェルセルフ', 'apollostation', 'アポロステーション',
@@ -56,6 +65,8 @@
       '動物園', '博物館', '美術館', 'プラネタリウム', 'テーマパーク', 'サンリオ', 'ゲーム', 'Steam', 'PlayStation', 'プレイステーション', 'Nintendo', 'ニンテンドー', 'Xbox',
       'TSUTAYA', 'ツタヤ', 'ゲオ', 'ペアーズ', 'タップル', 'tinder', '占い', 'karaoke', 'noraebang',
       'スワローズ', 'ジャイアンツ', 'タイガース', 'ベイスターズ', 'カープ', 'ドラゴンズ', 'ライオンズ', 'イーグルス', 'ホークス', 'ファイターズ', 'マリーンズ', 'バファローズ']),
+    // 「リゾート」を含む旅行の語より先に判定する(ヘアリゾートは美容室)
+    G('美容', ['ヘアリゾート', 'hairresort']),
     G('旅行', ['ホテル', 'hotel', 'リゾート', '東横inn', '旅館', '民宿', 'ゲストハウス', '東横イン', 'ルートイン', 'アパホテル', 'スーパーホテル', 'ドーミーイン', 'ヒルトン', 'マリオット',
       '楽天トラベル', 'じゃらん', '一休', 'Booking.com', 'Agoda', 'エクスペディア', 'Expedia', 'Airbnb', 'トリバゴ', 'JAL', '日本航空', '全日空', '全日本空輸',
       'Peach Aviation', 'ジェットスター', 'Jetstar', 'スカイマーク', 'エアドゥ', 'ソラシド', 'フジドリーム', 'スプリング・ジャパン', '春秋航空', 'Aviation', '航空', 'エアライン',
@@ -100,7 +111,7 @@
     G('交通費', ['JR', 'Suica', 'スイカ', 'PASMO', 'パスモ', 'ICOCA', 'イコカ', '地下鉄', '東京メトロ', '都営', '東急', '小田急', '京王', '西武', '東武', '京成', '京急', '相鉄',
       '阪急', '阪神', '近鉄', '南海', '京阪', '名鉄', '西鉄', '電鉄', '鉄道', 'モノレール', '交通局', 'タクシー', '日本交通', '第一交通', 'S.RIDE', 'DiDi', 'Uber',
       'HELLO CYCLING', 'ハローサイクリング', 'LUUP', 'ルーポ', 'バイクシェア', 'レンタカー', 'タイムズ', 'カーシェア', 'リパーク', 'コインパーク', 'パーキング', '駐車', 'NPC24',
-      'ナビパーク', 'ETCカード', '首都高', '高速道路', '高速バス', '路線バス', '市バス', '都バス', 'ウィラー', 'WILLER', 'バスターミナル', 'バス停', '自転車', 'etc東日本', 'etc中日本', 'etc西日本', 'etc特別割引', 'etc冬期割引', 'etc割引', 'etc名古屋', 'etc栃木', 'etc首都高', 'etc阪神', 'etc本四', 'taxi', 'metro', 'subway', 'railroad', 'korail', 't-money', 'transportation'])
+      'ナビパーク', 'ETCカード', '首都高', '高速道路', '高速バス', '路線バス', '市バス', '都バス', 'ウィラー', 'WILLER', 'バスターミナル', 'バス停', '自転車', '^etc', 'taxi', 'metro', 'subway', 'railroad', 'korail', 't-money', 'transportation'])
   );
 
   // 照合用の正規化。NFKC+小文字化に加え、QUICPay等の表記ゆれ(長音が「-」、小書き仮名が大書き: マイバスケツト/ドンキホ-テ)をそろえる。
@@ -148,7 +159,8 @@
   function matchRule(payee, rules) {
     const p = norm(payee);
     const list = (rules || []).map(r => [norm(r.keyword), r.category]).concat(DEFAULT_NORM);
-    for (const [kw, cat] of list) if (kw && p.includes(kw)) return cat;
+    // キーワードの先頭が「^」なら、取引先がその語で始まる場合だけ一致(例: ^etc は「ETC東日本…」には一致し、「sketch」には一致しない)
+    for (const [kw, cat] of list) if (kw && (kw[0] === '^' ? kw.length > 1 && p.startsWith(kw.slice(1)) : p.includes(kw))) return cat;
     return null;
   }
   function categorize(payee, rules) { return matchRule(payee, rules) || 'その他'; }
@@ -278,6 +290,26 @@
     throw new Error('PayPayまたはセゾンカードのCSVではありません');
   }
 
+  // 取り込み済みの取引(PayPay・セゾン)に、最新の自動分類ルールを当て直す。
+  // 対象外: 手入力、収入、送金、手でカテゴリを変えた取引(manual)。利用者の規則(rules)は標準ルールより優先される。
+  // opts.dry=true なら、変更せず「変わる件数」だけを返す。
+  function recategorize(txs, rules, opts) {
+    const dry = !!(opts && opts.dry);
+    let changed = 0;
+    for (const t of txs) {
+      if (t.manual || t.source === 'manual' || t.type !== 'expense' || t.category === '送金') continue;
+      const foreign = t.source === 'saison' && !!t.memo; // セゾンの海外利用はメモに現地通貨が入る
+      const cat = matchRule(t.payee, rules) || (foreign ? '旅行' : 'その他');
+      const cur = t.dep ? t.cat0 : t.category; // dep行は、元のカテゴリ(cat0)を更新し、集計から外すかは reconcile が決める
+      if (cur === cat) continue;
+      changed++;
+      if (dry) continue;
+      if (t.dep) t.cat0 = cat; else t.category = cat;
+    }
+    if (!dry) reconcile(txs);
+    return changed;
+  }
+
   // 二重計上の調整(取り込みのたびに、保存済みの全取引に対して行う)。
   // 取引の dep は「この行の買い物は、どの明細(paypay / saison)で数えるか」を表す。
   //  ・その明細が取り込み済みで、日付がその明細の期間内 → 向こうで数えるので、この行は集計から外す(カテゴリ「カード引落」)
@@ -370,5 +402,5 @@
     return '﻿' + lines.join('\r\n') + '\r\n';
   }
 
-  root.Core = { DEFAULT_CATS, DEFAULT_RULES, parseCsv, parsePayPay, parseSaison, parseStatement, reconcile, categorize, mergeImport, summarize, addMonths, monthlyExpense, dailyTotals, searchTxs, toCsv };
+  root.Core = { DEFAULT_CATS, DEFAULT_RULES, parseCsv, parsePayPay, parseSaison, parseStatement, reconcile, recategorize, categorize, mergeImport, summarize, addMonths, monthlyExpense, dailyTotals, searchTxs, toCsv };
 })(typeof window !== 'undefined' ? window : globalThis);
