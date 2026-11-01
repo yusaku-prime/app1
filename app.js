@@ -298,10 +298,8 @@
     const v = el.dataset.v, form = el.closest('form');
     switch (el.dataset.act) {
       case 'tab': ui.tab = v; render(); break;
-      case 'mPrev': ui.month = Core.addMonths(ui.month, -1); ui.calDay = null; render(); break;
-      case 'mNext': ui.month = Core.addMonths(ui.month, 1); ui.calDay = null; render(); break;
-      case 'pPrev': ui.month = Core.addMonths(ui.month, ui.rep === 'year' ? -12 : -1); ui.repCat = null; render(); break;
-      case 'pNext': ui.month = Core.addMonths(ui.month, ui.rep === 'year' ? 12 : 1); ui.repCat = null; render(); break;
+      case 'mPrev': case 'pPrev': slide(-1); break;
+      case 'mNext': case 'pNext': slide(1); break;
       case 'goMonth': ui.month = v; ui.rep = 'month'; ui.repCat = null; render(); break;
       case 'calDay': ui.calDay = ui.calDay === v ? null : v; render(); break;
       case 'repMode': ui.rep = v; ui.repCat = null; render(); break;
@@ -379,25 +377,63 @@
     if (t.id === 'jsonFile') restoreJson(f);
   });
 
-  // 横スワイプで月送り(カレンダー・レポート)。左へ=次、右へ=前。縦スクロール優先。
-  let sw = null;
+  // 月送り(カレンダー・レポート)。左へスワイプ=次、右へ=前。縦スクロール優先。
+  // 指に合わせて画面が横に動き、離すと旧画面が流れ出て新しい月が横から入ってくる。
   const mainEl = $('main');
+  const reduced = () => window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let sw = null, animating = false;
+
+  function applyMonth(dir) {
+    if (ui.tab === 'cal') { ui.month = Core.addMonths(ui.month, dir); ui.calDay = null; }
+    else { ui.month = Core.addMonths(ui.month, dir * (ui.rep === 'year' ? 12 : 1)); ui.repCat = null; }
+  }
+  function resetStyle() { mainEl.style.transition = ''; mainEl.style.transform = ''; mainEl.style.opacity = ''; }
+  function slide(dir) {
+    if (animating) return;
+    if (reduced()) { applyMonth(dir); render(); return; }
+    animating = true;
+    mainEl.style.transition = 'transform .16s ease-in, opacity .16s ease-in';
+    mainEl.style.transform = `translateX(${-dir * 35}%)`; mainEl.style.opacity = '0';
+    setTimeout(() => {
+      applyMonth(dir); render();
+      mainEl.style.transition = 'none';
+      mainEl.style.transform = `translateX(${dir * 35}%)`; mainEl.style.opacity = '0';
+      void mainEl.offsetWidth;
+      mainEl.style.transition = 'transform .22s ease-out, opacity .22s ease-out';
+      mainEl.style.transform = 'translateX(0)'; mainEl.style.opacity = '1';
+      setTimeout(() => { resetStyle(); animating = false; }, 240);
+    }, 160);
+  }
+  window.__slide = slide; // テスト用
+
   mainEl.addEventListener('touchstart', e => {
-    sw = (ui.tab === 'cal' || ui.tab === 'report') && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+    sw = (ui.tab === 'cal' || ui.tab === 'report') && !animating && e.touches.length === 1
+      ? { x: e.touches[0].clientX, y: e.touches[0].clientY, h: false } : null;
+  }, { passive: true });
+  mainEl.addEventListener('touchmove', e => {
+    if (!sw) return;
+    const t = e.touches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+    if (!sw.h) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > Math.abs(dx)) { sw = null; return; } // 縦スクロール
+      if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy) * 1.5) sw.h = true; else return;
+    }
+    mainEl.style.transition = 'none';
+    mainEl.style.transform = `translateX(${dx * 0.8}px)`;
+    mainEl.style.opacity = String(Math.max(0.5, 1 - Math.abs(dx) / 500));
   }, { passive: true });
   mainEl.addEventListener('touchend', e => {
     if (!sw) return;
-    const t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+    const t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y, moved = sw.h;
     sw = null;
-    if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
-    swipeMonth(dx < 0 ? 1 : -1);
+    const ok = Math.abs(dx) >= 60 && Math.abs(dy) <= Math.abs(dx) * 0.6;
+    if (ok) { if (moved) resetStyle(); slide(dx < 0 ? 1 : -1); return; }
+    if (moved) { // しきい値に届かない: 元の位置に戻す
+      mainEl.style.transition = 'transform .15s ease-out, opacity .15s ease-out';
+      mainEl.style.transform = 'translateX(0)'; mainEl.style.opacity = '1';
+      setTimeout(resetStyle, 170);
+    }
   }, { passive: true });
-  function swipeMonth(dir) {
-    if (ui.tab === 'cal') { ui.month = Core.addMonths(ui.month, dir); ui.calDay = null; }
-    else { ui.month = Core.addMonths(ui.month, dir * (ui.rep === 'year' ? 12 : 1)); ui.repCat = null; }
-    render();
-  }
-  window.__swipeMonth = swipeMonth; // テスト用
+  mainEl.addEventListener('touchcancel', () => { if (sw && sw.h) resetStyle(); sw = null; }, { passive: true });
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => { /* オフライン対応なしで動作 */ });

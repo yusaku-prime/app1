@@ -15,7 +15,11 @@
 :root{--bg:#f6f6f4;--card:#fff;--text:#222;--sub:#777;--line:#e4e4e0;--acc:#f58a07;--acc-t:#fff;--soft:#fff5e3;--exp:#e8604c;--inc:#3b8fd0;--sat:#3b8fd0;--sun:#e8604c}
 @media (prefers-color-scheme:dark){:root{--bg:#141414;--card:#1f1f1f;--text:#ececec;--sub:#9a9a9a;--line:#333;--acc:#ff9a1f;--acc-t:#1a1100;--soft:#2e2412;--exp:#f2796a;--inc:#62aee8;--sat:#62aee8;--sun:#f2796a}}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif}
+html,body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;overscroll-behavior:none}
+html{-webkit-text-size-adjust:100%}
+main{touch-action:pan-y;will-change:transform}
+/* 縦画面のみ: 横向きでは操作を止めて案内を出す */
+@media (orientation:landscape) and (max-height:500px){body>*{display:none!important}body::before{content:"縦向きでお使いください";display:block;text-align:center;padding:30vh 16px 0;color:var(--sub);font-size:18px}}
 body{padding:env(safe-area-inset-top) 0 calc(64px + env(safe-area-inset-bottom))}
 main{max-width:640px;margin:0 auto}
 h2{font-size:14px;margin:18px 16px 6px;color:var(--sub);font-weight:600}
