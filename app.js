@@ -15,12 +15,11 @@
 
   // ---------- 保存 ----------
   function defaults() {
-    return { txs: [], rules: [], excluded: ['カード引落'], cats: Core.DEFAULT_CATS.map(c => Object.assign({}, c)), budget: { total: 0, cats: {} } };
+    return { txs: [], rules: [], excluded: ['カード引落'], cats: Core.DEFAULT_CATS.map(c => Object.assign({}, c)) };
   }
   function normalize(st) {
     if (!Array.isArray(st.cats) || !st.cats.length) st.cats = defaults().cats;
-    if (!st.budget) st.budget = { total: 0, cats: {} };
-    if (!st.budget.cats) st.budget.cats = {};
+    delete st.budget; // 予算機能は廃止(旧データに残っていれば捨てる)
     for (const t of st.txs) {
       if (!st.cats.some(c => c.name === t.category && c.type === t.type)) {
         st.cats.push({ name: t.category, type: t.type, icon: '⭐', color: '#7f8c8d' });
@@ -103,7 +102,7 @@
   // ---------- 画面 ----------
   function render() {
     document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.v === ui.tab));
-    $('main').innerHTML = { input: viewInput, cal: viewCal, report: viewReport, budget: viewBudget, menu: viewMenu }[ui.tab]();
+    $('main').innerHTML = { input: viewInput, cal: viewCal, report: viewReport, menu: viewMenu }[ui.tab]();
     window.scrollTo(0, 0);
   }
 
@@ -177,23 +176,6 @@
       <div class="top" style="justify-content:center"><div class="seg"><button data-act="repType" data-v="expense" class="${isExp ? 'on' : ''}">支出</button><button data-act="repType" data-v="income" class="${isExp ? '' : 'on'}">収入</button></div></div>
       <div class="card" style="border:0">${donut(list, total)}</div>
       <div class="list">${rows}</div>${detail}${monthly}`;
-  }
-
-  function viewBudget() {
-    const s = Core.summarize(state.txs, ui.month, state.excluded);
-    const spent = {}; s.byCat.forEach(c => { spent[c.category] = c.amount; });
-    const row = (name, ic, used, budget, key) => {
-      const pct = budget ? Math.min(100, Math.round(used / budget * 100)) : 0;
-      const left = budget - used;
-      return `<div class="brow"><div class="h">${ic}<span class="nm">${esc(name)}</span><input data-budget="${esc(key)}" inputmode="numeric" placeholder="予算" value="${budget || ''}"></div>
-        <div class="bar"><i style="width:${pct}%;background:${budget && left < 0 ? 'var(--exp)' : 'var(--acc)'}"></i></div>
-        <small class="muted">使用 ${yen(used)}${budget ? ` / ${left < 0 ? `<span class="exp">${yen(-left)} 超過</span>` : `残り ${yen(left)}`}` : ' / 予算未設定'}</small></div>`;
-    };
-    const cats = state.cats.filter(c => c.type === 'expense' && !state.excluded.includes(c.name));
-    return `<div class="top"><b style="margin:0 auto">予算(毎月)</b></div>
-      ${monthNav(monthLabel(), 'mPrev', 'mNext')}
-      <div class="list">${row('全体', '<span class="ic" style="background:var(--soft)">👛</span>', s.expense, state.budget.total, '__total')}${cats.map(c => row(c.name, icon(c), spent[c.name] || 0, state.budget.cats[c.name] || 0, c.name)).join('')}</div>
-      <p class="muted" style="padding:0 16px">予算は毎月同じ金額です。入力した金額は自動で保存されます。</p>`;
   }
 
   function viewMenu() {
@@ -308,7 +290,6 @@
     state.txs.forEach(t => { if (t.type === type && t.category === oldName) t.category = newName; });
     state.rules.forEach(r => { if (r.category === oldName) r.category = newName; });
     state.excluded = state.excluded.map(n => n === oldName ? newName : n);
-    if (state.budget.cats[oldName] != null) { state.budget.cats[newName] = state.budget.cats[oldName]; delete state.budget.cats[oldName]; }
   }
 
   document.addEventListener('click', e => {
@@ -375,7 +356,7 @@
           state.txs.forEach(t => { if (t.type === ui.catType && t.category === v) t.category = 'その他'; });
           state.cats = state.cats.filter(c => !(c.type === ui.catType && c.name === v));
           state.rules = state.rules.filter(r => r.category !== v);
-          delete state.budget.cats[v]; save(); catEditor();
+          save(); catEditor();
         }
         break;
       }
@@ -392,16 +373,31 @@
   document.addEventListener('input', e => { if (e.target.id === 'searchQ') runSearch(e.target.value); });
   document.addEventListener('change', e => {
     const t = e.target;
-    if (t.dataset && t.dataset.budget != null && t.dataset.budget !== '') {
-      const n = parseInt(String(t.value).replace(/[^\d]/g, ''), 10) || 0;
-      if (t.dataset.budget === '__total') state.budget.total = n; else state.budget.cats[t.dataset.budget] = n;
-      save(); render(); return;
-    }
     const f = t.files && t.files[0];
     if (!f) return;
     if (t.id === 'csvFile') importCsv(f);
     if (t.id === 'jsonFile') restoreJson(f);
   });
+
+  // 横スワイプで月送り(カレンダー・レポート)。左へ=次、右へ=前。縦スクロール優先。
+  let sw = null;
+  const mainEl = $('main');
+  mainEl.addEventListener('touchstart', e => {
+    sw = (ui.tab === 'cal' || ui.tab === 'report') && e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  }, { passive: true });
+  mainEl.addEventListener('touchend', e => {
+    if (!sw) return;
+    const t = e.changedTouches[0], dx = t.clientX - sw.x, dy = t.clientY - sw.y;
+    sw = null;
+    if (Math.abs(dx) < 60 || Math.abs(dy) > Math.abs(dx) * 0.6) return;
+    swipeMonth(dx < 0 ? 1 : -1);
+  }, { passive: true });
+  function swipeMonth(dir) {
+    if (ui.tab === 'cal') { ui.month = Core.addMonths(ui.month, dir); ui.calDay = null; }
+    else { ui.month = Core.addMonths(ui.month, dir * (ui.rep === 'year' ? 12 : 1)); ui.repCat = null; }
+    render();
+  }
+  window.__swipeMonth = swipeMonth; // テスト用
 
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
     navigator.serviceWorker.register('sw.js').catch(() => { /* オフライン対応なしで動作 */ });
