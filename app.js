@@ -206,7 +206,7 @@
       <h2>カテゴリ</h2><div class="card"><div class="row"><button data-act="editCats" data-v="expense">支出カテゴリの編集</button><button data-act="editCats" data-v="income">収入カテゴリの編集</button></div>
         <p class="muted" style="margin-bottom:6px">取り込み済みのPayPay・セゾンの取引に、最新の自動分類ルールを当て直します。手入力の取引と、手で直した取引は変わりません。</p>
         <button data-act="recat" style="width:100%">自動分類をやり直す</button></div>
-      <h2>CSVを取り込む(PayPay・セゾンカード)</h2><div class="card"><p class="muted" style="margin-top:0">PayPayの取引履歴CSV、またはセゾンカードの利用明細CSVを選びます。形式は自動で判定します。同じ取引は2回入りません。PayPayのチャージ・ポイントは取り込みません。海外利用でカテゴリが決まらないものは「旅行」になります。</p><input type="file" id="csvFile" accept=".csv,text/csv"><div id="importResult"></div></div>
+      <h2>CSVを取り込む(PayPay・セゾンカード)</h2><div class="card"><p class="muted" style="margin-top:0">PayPayの取引履歴CSV、またはセゾンカードの利用明細CSVを選びます。<b>複数のファイルを、一度に選べます(最大10個)</b>。形式は自動で判定します。同じ取引は2回入りません。PayPayのチャージ・ポイントは取り込みません。海外利用でカテゴリが決まらないものは「旅行」になります。</p><input type="file" id="csvFile" accept=".csv,text/csv" multiple><div id="importResult"></div></div>
       <h2>集計から除外するカテゴリ</h2><div class="card">${ex}</div>
       <h2>自分のカテゴリ規則</h2>
       <div class="card"><p class="muted" style="margin-top:0">店名の一部を入れると、その店名を含む取引が、選んだカテゴリになります。標準のルールより優先されます。規則はこの端末の中だけに保存されます。</p>
@@ -317,23 +317,62 @@
     '期間限定ポイントの期限切れ': 'ポイントの失効です',
   };
 
-  async function importCsv(file) {
+  // 一度に取り込めるファイル数・大きさ・処理時間の上限(端末が固まらないようにするため)
+  const MAX_FILES = 10, MAX_BYTES = 5 * 1024 * 1024, TIME_LIMIT_MS = 7000;
+  let importing = false;
+  const tick = () => new Promise(r => setTimeout(r, 0)); // 進捗表示を描画させるため、ファイルの合間に一息入れる
+  const SRC = { paypay: 'PayPay', saison: 'セゾンカード' };
+
+  // 複数のCSVをまとめて取り込む(PayPay・セゾンカード、形式は自動判定)。
+  // ・ファイル名順に処理する。1つが失敗しても、残りは取り込む
+  // ・保存・二重計上の調整(reconcile)は、全ファイルを読んだあとに1回だけ行う(速くするため)
+  // ・7秒を超えたら、新しいファイルは始めない(処理済みの分は保存する)
+  async function importFiles(fileList) {
     const box = $('importResult');
+    const picked = Array.from(fileList || []).sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
+    if (!picked.length || importing) return;
+    importing = true;
+    const files = picked.slice(0, MAX_FILES);
+    const t0 = performance.now();
+    const preIds = new Set(state.txs.map(t => t.id));
+    const before = new Map(state.txs.filter(t => t.dep).map(t => [t.id, t.category]));
+    const skipped = {}, skippedAmt = {}, methods = {}, cardPaid = { n: 0, amount: 0, labels: [] };
+    const results = [];
+    let stopped = 0, fmt = '';
+    const sum = (o, k, v) => { o[k] = (o[k] || 0) + v; };
     try {
-      const { records, skipped, skippedAmt, meta } = Core.parseStatement(await readText(file), state.rules);
-      const preIds = new Set(state.txs.map(t => t.id));
-      const before = new Map(state.txs.filter(t => t.dep).map(t => [t.id, t.category]));
-      const r = Core.mergeImport(state.txs, records);
-      state.txs = r.merged; normalize(state);
-      Core.reconcile(state.txs); // 二重計上の調整(PayPay⇔セゾン)
-      save();
-      const saison = meta.format === 'saison';
-      const added = state.txs.filter(t => records.some(x => x.id === t.id) && !preIds.has(t.id));
-      const addedIds = new Set(added.map(t => t.id));
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        if (i > 0 && performance.now() - t0 > TIME_LIMIT_MS) { stopped = files.length - i; break; }
+        box.innerHTML = `<p class="muted">読み込み中… ${i + 1}/${files.length}(${esc(f.name)})</p>`;
+        await tick();
+        try {
+          if (f.size > MAX_BYTES) throw new Error(`ファイルが大きすぎます(${(f.size / 1048576).toFixed(1)}MB。上限${MAX_BYTES / 1048576}MB)`);
+          const p = Core.parseStatement(await readText(f), state.rules);
+          const r = Core.mergeImport(state.txs, p.records);
+          state.txs = r.merged;
+          for (const [k, v] of Object.entries(p.skipped)) sum(skipped, k, v);
+          for (const [k, v] of Object.entries(p.skippedAmt || {})) sum(skippedAmt, k, v);
+          for (const [k, v] of Object.entries(p.meta.methods || {})) sum(methods, k, v);
+          if (p.meta.cardPaid) {
+            cardPaid.n += p.meta.cardPaid.n; cardPaid.amount += p.meta.cardPaid.amount;
+            for (const l of p.meta.cardPaid.labels) if (!cardPaid.labels.includes(l)) cardPaid.labels.push(l);
+          }
+          fmt = p.meta.format;
+          results.push({ name: f.name, ok: true, meta: p.meta, added: r.added, dup: r.dup });
+        } catch (e) {
+          results.push({ name: f.name, ok: false, error: e.message });
+        }
+      }
+      const okList = results.filter(x => x.ok);
+      if (okList.length) { normalize(state); Core.reconcile(state.txs); save(); } // 二重計上の調整(PayPay⇔セゾン)は、最後に1回
+
+      const added = state.txs.filter(t => !preIds.has(t.id));
+      const totalAdded = okList.reduce((a, x) => a + x.added, 0), totalDup = okList.reduce((a, x) => a + x.dup, 0);
+      const multi = files.length > 1, formats = new Set(okList.map(x => x.meta.format));
       const notes = [];
 
       // 取り込んだ行のうち、他の明細で数える行(dep)の扱い
-      const SRC = { paypay: 'PayPay', saison: 'セゾンカード' };
       for (const src of ['paypay', 'saison']) {
         const rows = added.filter(t => t.dep === src);
         if (!rows.length) continue;
@@ -347,25 +386,41 @@
       if (adjusted.length) notes.push(`取り込み済みの ${adjusted.length}件(計${yen(sumAmt(adjusted))})が、今回の明細と二重になるため、集計から外しました。`);
 
       let detail = '';
-      if (saison) {
-        detail = `<p class="muted">お支払日 ${esc(meta.payDate || '-')} / 請求額 ${meta.bill ? yen(meta.bill) : '-'} / 取り込んだ明細の合計 ${yen(meta.total)}<br>※請求額との差は、手数料や金利などの可能性があります。</p>`;
-      } else {
-        const ms = Object.entries(meta.methods || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}件`).join(' / ');
-        if (ms) detail += `<p class="muted">支払い手段: ${ms}</p>`;
-        if (meta.cardPaid && meta.cardPaid.n) {
-          notes.push(`カード払い ${meta.cardPaid.n}件(計${yen(meta.cardPaid.amount)}、${meta.cardPaid.labels.map(esc).join('・')})も、PayPayの明細の支出として数えています。そのカードの利用明細を別に取り込むと、同じ買い物が二重になります。`);
-        }
-        const bills = added.filter(t => t.category === 'カード引落' && !t.dep);
-        if (bills.length) notes.push(`「カード引落」${bills.length}件(計${yen(sumAmt(bills))})は、カードの請求の支払いです。買い物の分は別に数えるため、集計から外しています(メニューで切り替えられます)。`);
+      if (!multi && okList.length && fmt === 'saison') {
+        const m = okList[0].meta;
+        detail = `<p class="muted">お支払日 ${esc(m.payDate || '-')} / 請求額 ${m.bill ? yen(m.bill) : '-'} / 取り込んだ明細の合計 ${yen(m.total)}<br>※請求額との差は、手数料や金利などの可能性があります。</p>`;
       }
-      const sk = Object.entries(skipped).map(([k, v]) => `<li>${esc(k)} ${v}件${skippedAmt && skippedAmt[k] ? `(計${yen(skippedAmt[k])})` : ''}${SKIP_WHY[k] ? ` … ${SKIP_WHY[k]}` : ''}</li>`).join('');
-      box.innerHTML = `<p><b>取り込み結果(${SRC[meta.format]})</b><br>追加 ${r.added}件 / 重複 ${r.dup}件</p>${detail}
+      const ms = Object.entries(methods).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}件`).join(' / ');
+      if (ms) detail += `<p class="muted">支払い手段: ${ms}</p>`;
+      if (cardPaid.n) {
+        notes.push(`カード払い ${cardPaid.n}件(計${yen(cardPaid.amount)}、${cardPaid.labels.map(esc).join('・')})も、PayPayの明細の支出として数えています。そのカードの利用明細を別に取り込むと、同じ買い物が二重になります。`);
+      }
+      const bills = added.filter(t => t.category === 'カード引落' && !t.dep);
+      if (bills.length) notes.push(`「カード引落」${bills.length}件(計${yen(sumAmt(bills))})は、カードの請求の支払いです。買い物の分は別に数えるため、集計から外しています(メニューで切り替えられます)。`);
+
+      // 上限・時間切れで取り込まなかったファイル
+      const rest = picked.slice(MAX_FILES).concat(files.slice(files.length - stopped));
+      if (picked.length > MAX_FILES) notes.push(`一度に取り込めるのは${MAX_FILES}個までです。先頭の${MAX_FILES}個を取り込みました。残りの${picked.length - MAX_FILES}個は、もう一度選んでください。`);
+      if (stopped) notes.push(`処理に時間がかかったため、${stopped}個は取り込んでいません(${rest.slice(-stopped).map(f => esc(f.name)).join('、')})。もう一度選んでください。`);
+
+      const sk = Object.entries(skipped).map(([k, v]) => `<li>${esc(k)} ${v}件${skippedAmt[k] ? `(計${yen(skippedAmt[k])})` : ''}${SKIP_WHY[k] ? ` … ${SKIP_WHY[k]}` : ''}</li>`).join('');
+      const fileLines = multi ? '<ul class="muted" style="padding-left:20px">' + results.map(x => x.ok
+        ? `<li>${esc(x.name)} … ${SRC[x.meta.format]} 追加 ${x.added}件 / 重複 ${x.dup}件${x.meta.format === 'saison' && x.meta.bill && x.meta.bill !== x.meta.total ? `(請求額との差 ${yen(Math.abs(x.meta.bill - x.meta.total))})` : ''}</li>`
+        : `<li class="danger">${esc(x.name)} … 取り込めませんでした: ${esc(x.error)}</li>`).join('') + '</ul>' : '';
+      if (!okList.length) {
+        box.innerHTML = `<p class="danger">取り込めませんでした: ${results.length === 1 ? esc(results[0].error) : ''}</p>${multi ? fileLines : ''}${notes.map(n => `<p class="note">${n}</p>`).join('')}`;
+        return;
+      }
+      const title = multi ? `取り込み結果(${okList.length}/${files.length}個)` : `取り込み結果(${SRC[fmt]})`;
+      const secs = ((performance.now() - t0) / 1000).toFixed(1);
+      box.innerHTML = `<p><b>${title}</b><br>追加 ${totalAdded}件 / 重複 ${totalDup}件</p>${fileLines}${detail}
         ${notes.map(n => `<p class="note">${n}</p>`).join('')}
         <p class="muted" style="margin-bottom:2px">取り込まなかったもの${sk ? '' : ': なし'}</p>${sk ? `<ul class="muted" style="margin-top:0;padding-left:20px">${sk}</ul>` : ''}
+        <p class="muted">処理時間 ${secs}秒${formats.size > 1 ? '(PayPayとセゾンカードを同時に取り込みました)' : ''}</p>
         <button class="primary" data-act="tab" data-v="cal">カレンダーを見る</button>`;
-      if (records.length) ui.month = records.reduce((m, t) => t.date > m ? t.date : m, '0000').slice(0, 7);
-    } catch (e) {
-      box.innerHTML = `<p class="danger">取り込めませんでした: ${esc(e.message)}</p>`;
+      if (added.length) ui.month = added.reduce((m, t) => t.date > m ? t.date : m, '0000').slice(0, 7);
+    } finally {
+      importing = false;
     }
   }
 
@@ -496,10 +551,9 @@
   document.addEventListener('input', e => { if (e.target.id === 'searchQ') runSearch(e.target.value); });
   document.addEventListener('change', e => {
     const t = e.target;
-    const f = t.files && t.files[0];
-    if (!f) return;
-    if (t.id === 'csvFile') importCsv(f);
-    if (t.id === 'jsonFile') restoreJson(f);
+    if (!t.files || !t.files.length) return;
+    if (t.id === 'csvFile') importFiles(t.files);
+    if (t.id === 'jsonFile') restoreJson(t.files[0]);
   });
 
   // 月送り(カレンダー・レポート)。左へスワイプ=次、右へ=前。縦スクロール優先。
