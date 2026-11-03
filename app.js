@@ -16,7 +16,7 @@
   // ---------- 保存 ----------
   const CAT_VER = 2; // 標準カテゴリの版。上げたら、古い保存データに新しいカテゴリだけを足す
   function defaults() {
-    return { txs: [], rules: [], excluded: ['カード引落'], cats: Core.DEFAULT_CATS.map(c => Object.assign({}, c)), catVer: CAT_VER };
+    return { txs: [], rules: [], excluded: ['カード引落'], cats: Core.DEFAULT_CATS.map(c => Object.assign({}, c)), catVer: CAT_VER, imports: [] };
   }
   // 保存データ(またはバックアップ)から状態を作る。catVer がない古いデータは版1として扱う
   function fromSaved(s) {
@@ -26,6 +26,7 @@
   }
   function normalize(st) {
     if (!Array.isArray(st.cats) || !st.cats.length) st.cats = defaults().cats;
+    if (!Array.isArray(st.imports)) st.imports = []; // 取り込み履歴(ファイルごと)。古い保存データには無い
     delete st.budget; // 予算機能は廃止(旧データに残っていれば捨てる)
     // 標準カテゴリが増えた版では、足りない新カテゴリだけを足す(利用者が消した既存カテゴリは復活させない)
     if ((st.catVer || 1) < CAT_VER) {
@@ -197,6 +198,28 @@
       <div class="list">${rows}</div>${monthly}`;
   }
 
+  // ---------- 取り込み履歴 ----------
+  const IMP_FMT = { paypay: 'PayPay', saison: 'セゾンカード' };
+  function fmtAt(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? '' : `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  const slash = s => s.replace(/-/g, '/');
+  // 履歴の機能を入れる前に取り込んだ取引(印なし)を、取り込み元ごとにまとめる
+  function legacyGroups() {
+    return ['paypay', 'saison'].map(src => ({ src, n: state.txs.filter(t => t.source === src && !t.imp).length })).filter(g => g.n > 0);
+  }
+  function importHistory() {
+    const live = {}; for (const t of state.txs) if (t.imp) live[t.imp] = (live[t.imp] || 0) + 1;
+    const rows = state.imports.slice().reverse().map(h => {
+      const n = live[h.id] || 0;
+      return `<div class="tx" style="min-height:60px"><div class="l"><div><b>${esc(h.name)}</b></div><small>${esc(IMP_FMT[h.format] || h.format)} ・ ${esc(fmtAt(h.at))}<br>取引 ${n}件${n !== h.added ? `(取り込み時 ${h.added}件)` : ''}${h.from ? ` ・ ${slash(h.from)}〜${slash(h.to)}` : ''}</small></div><button data-act="delImp" data-v="${esc(h.id)}" class="danger">削除</button></div>`;
+    }).join('');
+    const legacy = legacyGroups().map(g => `<div class="tx" style="min-height:60px"><div class="l"><div><b>${IMP_FMT[g.src]}(履歴の記録前に取り込んだ分)</b></div><small>ファイルを特定できません ・ 取引 ${g.n}件</small></div><button data-act="delImp" data-v="legacy:${g.src}" class="danger">削除</button></div>`).join('');
+    return `<div class="card"><p class="muted" style="margin:0">削除すると、そのファイルから追加された取引だけが、この家計簿から消えます。元のCSVファイルは、そのまま残ります。手入力した取引は消えません。</p></div>
+      <div class="list">${rows || legacy ? rows + legacy : '<div class="muted" style="padding:10px 16px">取り込み履歴はまだありません。</div>'}</div>`;
+  }
+
   function viewMenu() {
     const names = [...new Set(state.cats.map(c => c.name))];
     const ex = names.map(n => `<label class="chk" style="margin:6px 0"><input type="checkbox" data-act="toggleEx" data-v="${esc(n)}" ${state.excluded.includes(n) ? 'checked' : ''}>${esc(n)}</label>`).join('');
@@ -217,7 +240,8 @@
       <h2>バックアップ</h2><div class="card"><p class="muted" style="margin-top:0">Safariはしばらく使わないとデータを消すことがあります。月に1回はJSONを書き出して保存してください。</p>
         <div class="row"><button data-act="exportJson">JSON書き出し</button><button data-act="exportCsv">CSV書き出し</button></div>
         <p class="muted">JSONから復元(現在のデータを置き換えます)</p><input type="file" id="jsonFile" accept=".json,application/json"></div>
-      <h2>データ</h2><div class="card"><div class="muted">取引 ${state.txs.length}件</div><button data-act="wipe" class="danger" style="margin-top:8px">すべて削除</button></div>`;
+      <h2>データ</h2><div class="card"><div class="muted">取引 ${state.txs.length}件</div><button data-act="wipe" class="danger" style="margin-top:8px">すべて削除</button></div>
+      <h2>取り込み履歴</h2>${importHistory()}`;
   }
 
   // ---------- シート ----------
@@ -349,8 +373,18 @@
         try {
           if (f.size > MAX_BYTES) throw new Error(`ファイルが大きすぎます(${(f.size / 1048576).toFixed(1)}MB。上限${MAX_BYTES / 1048576}MB)`);
           const p = Core.parseStatement(await readText(f), state.rules);
+          // 取引に「どの取り込みで入ったか」の印(imp)を付ける。重複で捨てられる行は、元の取り込みのものとして残る
+          const impId = 'i' + Date.now().toString(36) + i + Math.random().toString(36).slice(2, 5);
+          for (const t of p.records) t.imp = impId;
           const r = Core.mergeImport(state.txs, p.records);
           state.txs = r.merged;
+          if (r.added > 0) {
+            const newOnes = r.merged.slice(-r.added); // 追加分は末尾に並ぶ
+            state.imports.push({
+              id: impId, name: f.name, format: p.meta.format, at: new Date().toISOString(), added: r.added,
+              from: newOnes.reduce((m, t) => !m || t.date < m ? t.date : m, ''), to: newOnes.reduce((m, t) => t.date > m ? t.date : m, ''),
+            });
+          }
           for (const [k, v] of Object.entries(p.skipped)) sum(skipped, k, v);
           for (const [k, v] of Object.entries(p.skippedAmt || {})) sum(skippedAmt, k, v);
           for (const [k, v] of Object.entries(p.meta.methods || {})) sum(methods, k, v);
@@ -540,6 +574,21 @@
       }
       case 'exportJson': download('kakeibo-backup-' + today() + '.json', JSON.stringify(state), 'application/json'); break;
       case 'exportCsv': download('kakeibo-' + today() + '.csv', Core.toCsv(state.txs), 'text/csv'); break;
+      case 'delImp': {
+        const legacy = v.startsWith('legacy:'), src = legacy ? v.slice(7) : '';
+        const h = legacy ? null : state.imports.find(x => x.id === v);
+        if (!legacy && !h) break;
+        const hit = legacy ? (t => t.source === src && !t.imp) : (t => t.imp === v);
+        const n = state.txs.filter(hit).length;
+        const label = legacy ? `${IMP_FMT[src]}(履歴の記録前に取り込んだ分)` : `「${h.name}」(${fmtAt(h.at)}に取り込み)`;
+        if (confirm(`${label}の取引 ${n}件を、この家計簿から削除します。\n元のCSVファイルは消えません。手で直したカテゴリも、一緒に消えます。\n元に戻せません。先にJSONのバックアップをとっておくと安心です。削除しますか。`)) {
+          state.txs = state.txs.filter(t => !hit(t));
+          if (!legacy) state.imports = state.imports.filter(x => x.id !== v);
+          Core.reconcile(state.txs); // 二重計上の調整(PayPay⇔セゾン)をやり直す
+          save(); render(true); toast(`${n}件を削除しました`);
+        }
+        break;
+      }
       case 'wipe':
         if (confirm(`取引${state.txs.length}件とカテゴリ設定をすべて削除します。元に戻せません。よろしいですか。`)) {
           state = defaults(); save(); render(); toast('削除しました');
